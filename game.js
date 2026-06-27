@@ -229,15 +229,29 @@ function difficultyAt(x) {
   return 1 + (baseLevel + smooth) * 0.35;
 }
 
-// ── Noise (layered sines, scaled by difficulty) ──
+// ── Seeded RNG (mulberry32) for per-run terrain variety ──
+let terrainSeed = 12345;
+function setTerrainSeed(s) { terrainSeed = s; }
+function seededRand() {
+  terrainSeed = (terrainSeed * 1664525 + 1013904223) | 0;
+  return ((terrainSeed >>> 0) % 100000) / 100000;
+}
+
+// ── Noise (layered sines with per-run random phase offsets, scaled by difficulty) ──
+let noiseOffsets = [];
+function regenNoiseOffsets() {
+  noiseOffsets = [];
+  for (let i = 0; i < 5; i++) noiseOffsets.push(seededRand() * Math.PI * 2);
+}
+
 function noise(x) {
   const d = difficultyAt(x);
   return (
-    (Math.sin(x * 0.003) * 80 +
-     Math.sin(x * 0.007 + 1.3) * 40 +
-     Math.sin(x * 0.013 + 2.7) * 20 +
-     Math.sin(x * 0.021 + 4.1) * 10 +
-     Math.sin(x * 0.041 + 0.5) * 5) * d
+    (Math.sin(x * 0.003 + noiseOffsets[0]) * 80 +
+     Math.sin(x * 0.007 + noiseOffsets[1]) * 40 +
+     Math.sin(x * 0.013 + noiseOffsets[2]) * 20 +
+     Math.sin(x * 0.021 + noiseOffsets[3]) * 10 +
+     Math.sin(x * 0.041 + noiseOffsets[4]) * 5) * d
   );
 }
 
@@ -904,6 +918,9 @@ let runCrashX = 0;      // where the run ended
 const TRACK_SAMPLE_INTERVAL = 50; // sample terrain every 50 world units (~5m)
 
 function initGame() {
+  // New random terrain per run
+  setTerrainSeed(Math.floor(Math.random() * 1e9));
+  regenNoiseOffsets();
   terrain = new Terrain();
   car = new Car(100, BASE_Y - 100);
   coins = new CoinSystem();
