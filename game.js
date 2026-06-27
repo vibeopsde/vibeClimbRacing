@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.3";
+const VERSION = "v2606.2.4";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -156,11 +156,21 @@ const sfx = new SoundSystem();
 // ════════════════════════════════════════
 const SAVE_KEY = "vcr_save_v1";
 
+// Per-vehicle upgrade state (each vehicle has its own motor/tires/tank levels)
+function defaultVehicleUpgrades() {
+  return { motor: 0, tires: 0, tank: 0 };
+}
+function defaultAllUpgrades() {
+  const u = {};
+  for (const k of Object.keys(VEHICLES)) u[k] = defaultVehicleUpgrades();
+  return u;
+}
+
 const DEFAULT_SAVE = {
   name: null,
   wallet: 0,          // persistent coins across runs
   best: { distance: 0, level: 1, coins: 0 },
-  upgrades: { motor: 0, tires: 0, tank: 0 },
+  upgrades: defaultAllUpgrades(),  // { jeep:{motor,tires,tank}, truck:{...}, bike:{...} }
   vehicle: "jeep",            // currently selected vehicle key
   unlockedVehicles: ["jeep"], // array of unlocked vehicle keys
 };
@@ -170,11 +180,24 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return { ...DEFAULT_SAVE };
     const s = JSON.parse(raw);
+    // Migrate old flat upgrades format → per-vehicle (assign to jeep)
+    let upgrades = defaultAllUpgrades();
+    if (s.upgrades) {
+      if (s.upgrades.motor !== undefined && typeof s.upgrades.motor === "number") {
+        // Old flat format: {motor:0, tires:0, tank:0} → migrate to jeep
+        upgrades.jeep = { motor: s.upgrades.motor, tires: s.upgrades.tires, tank: s.upgrades.tank };
+      } else {
+        // New per-vehicle format: merge each vehicle's upgrades
+        for (const k of Object.keys(VEHICLES)) {
+          if (s.upgrades[k]) upgrades[k] = { ...defaultVehicleUpgrades(), ...s.upgrades[k] };
+        }
+      }
+    }
     return {
       ...DEFAULT_SAVE,
       ...s,
       best: { ...DEFAULT_SAVE.best, ...(s.best||{}) },
-      upgrades: { ...DEFAULT_SAVE.upgrades, ...(s.upgrades||{}) },
+      upgrades,
       unlockedVehicles: s.unlockedVehicles || ["jeep"],
       vehicle: s.vehicle || "jeep",
     };
@@ -538,11 +561,8 @@ class Car {
     this.inertia = vb.inertia;
     this.flipThreshold = vb.flipThreshold;  // π multiplier for flip detection
 
-    // Apply upgrades as multipliers on top of vehicle base
-    const u = saveData.upgrades;
-    const mUp = UPGRADES.motor.apply(u.motor);
-    const tUp = UPGRADES.tires.apply(u.tires);
-    const fUp = UPGRADES.tank.apply(u.tank);
+    // Apply upgrades as multipliers on top of vehicle base (per-vehicle upgrade levels)
+    const u = saveData.upgrades[saveData.vehicle] || defaultVehicleUpgrades();
 
     // Motor upgrade: percentage boost on vehicle's base engine force
     this.engineFwd = vb.engineFwd * (1 + 0.1 * u.motor);
@@ -1651,14 +1671,16 @@ function renderGarage() {
     list.appendChild(card);
   }
 
-  // ── Section 2: Upgrades ──
+  // ── Section 2: Upgrades (for currently selected vehicle) ──
   const upgradeHeader = document.createElement("div");
   upgradeHeader.className = "garage-section-header";
-  upgradeHeader.textContent = "🔧 UPGRADES";
+  upgradeHeader.textContent = `🔧 UPGRADES — ${VEHICLES[saveData.vehicle].name}`;
   list.appendChild(upgradeHeader);
 
+  const vehUpgrades = saveData.upgrades[saveData.vehicle] || defaultVehicleUpgrades();
+
   for (const [key, up] of Object.entries(UPGRADES)) {
-    const lvl = saveData.upgrades[key];
+    const lvl = vehUpgrades[key];
     const maxed = lvl >= up.maxLevel;
     const cost = maxed ? 0 : up.costs[lvl];
     const canAfford = saveData.wallet >= cost && !maxed;
@@ -1708,17 +1730,19 @@ function renderGarage() {
     });
   });
 
-  // Bind upgrade buy buttons
+  // Bind upgrade buy buttons (per-vehicle)
   list.querySelectorAll(".buy[data-upgrade]").forEach(btn => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.upgrade;
       const up = UPGRADES[key];
-      const lvl = saveData.upgrades[key];
+      const vu = saveData.upgrades[saveData.vehicle] || defaultVehicleUpgrades();
+      const lvl = vu[key];
       if (lvl >= up.maxLevel) return;
       const cost = up.costs[lvl];
       if (saveData.wallet < cost) return;
       saveData.wallet -= cost;
-      saveData.upgrades[key]++;
+      vu[key]++;
+      saveData.upgrades[saveData.vehicle] = vu;
       saveSave();
       sfx.coin();
       renderGarage();
