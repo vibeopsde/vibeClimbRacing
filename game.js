@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.2";
+const VERSION = "v2606.2.3";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -573,42 +573,50 @@ class Car {
     const ANG_DAMP = 0.96;
     const MAX_VX = 14;
 
+    // ── Mass & inertia factors (Jeep = 1.0 reference) ──
+    // Heavier mass → slower acceleration, but retains speed better (momentum)
+    // Heavier inertia → more rotational stability, slower slope alignment
+    const massFactor = 1.5 / this.mass;        // truck=0.68, bike=1.67
+    const inertiaFactor = 4500 / this.inertia;  // truck=0.69, bike=2.05
+
     // Forward direction (angle 0 = pointing right)
     const fwdX = Math.cos(this.angle);
     const fwdY = Math.sin(this.angle);
 
-    // Gravity (always down in screen)
+    // Gravity (always down in screen) — mass-independent (constant accel)
     this.vy += GRAVITY * dts;
 
-    // Engine: on ground = full thrust along forward, in air = rotation only
+    // Engine: F/m — heavier vehicles accelerate slower
     if (gas && this.fuel > 0) {
       this.fuel -= this.drainRate * dts;
       if (this.onGround) {
-        this.vx += fwdX * ENGINE_FWD * dts;
-        this.vy += fwdY * ENGINE_FWD * dts;
+        this.vx += fwdX * ENGINE_FWD * massFactor * dts;
+        this.vy += fwdY * ENGINE_FWD * massFactor * dts;
       }
     }
     if (brake && this.fuel > 0) {
       this.fuel -= this.drainRate * 0.5 * dts;
       if (this.onGround) {
-        this.vx -= fwdX * ENGINE_BACK * dts;
-        this.vy -= fwdY * ENGINE_BACK * dts;
+        this.vx -= fwdX * ENGINE_BACK * massFactor * dts;
+        this.vy -= fwdY * ENGINE_BACK * massFactor * dts;
       }
     }
 
     // Passive fuel drain
     this.fuel -= this.passiveDrain * dts;
 
-    // Air drag
-    this.vx *= AIR_DRAG;
+    // Air drag: heavier vehicles lose less speed (momentum ∝ mass)
+    const dragLoss = (1 - AIR_DRAG) * massFactor;
+    this.vx *= (1 - dragLoss);
     this.vy *= 0.999;
 
     // Speed clamp
     if (this.vx > MAX_VX) this.vx = MAX_VX;
     if (this.vx < -MAX_VX * 0.6) this.vx = -MAX_VX * 0.6;
 
-    // Angular damping + air control
-    this.angVel *= ANG_DAMP;
+    // Angular damping: heavier = more stable (rotation stops faster)
+    const angDampLoss = (1 - ANG_DAMP) / massFactor;
+    this.angVel *= (1 - angDampLoss);
     if (!this.onGround) {
       // Air control: gentle nudge, capped — for wheelie/endo adjustment, not death spins
       // Loopings happen from terrain launches + angular momentum, NOT from holding gas
@@ -698,16 +706,16 @@ class Car {
       const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
       const upsideDown = normAngle > Math.PI * this.flipThreshold && normAngle < Math.PI * (2 - this.flipThreshold);
       if (!upsideDown) {
-        this.angVel *= 0.6;
+        this.angVel *= (1 - 0.4 / massFactor);  // ground angular damping: heavier = more damping
         // Target angle = terrain slope angle
         const slope = terrain.slopeAt(this.x);
         const targetAngle = Math.atan2(slope, 1);
-        // Smoothly steer car angle toward slope (gentler = more airtime off crests)
+        // Smoothly steer car angle toward slope — heavier inertia = slower alignment
         let diff = targetAngle - this.angle;
         // Normalize to [-PI, PI]
         while (diff > Math.PI) diff -= 2 * Math.PI;
         while (diff < -Math.PI) diff += 2 * Math.PI;
-        this.angle += diff * this.slopeAlign * dts;
+        this.angle += diff * this.slopeAlign * inertiaFactor * dts;
       } else {
         // Upside down on ground — no slope correction, let flip timer run
         this.angVel *= 0.95;
@@ -1606,11 +1614,14 @@ function renderGarage() {
     card.className = `upgrade-card vehicle-card ${isSelected ? "selected" : ""}`;
 
     const stats = veh.base;
+    // Compute derived stats for display (Jeep = reference 50%)
+    const accel = stats.engineFwd / stats.mass;  // F/m — true acceleration
+    const stability = (stats.flipThreshold * 0.5 + (stats.mass / 2.5) * 0.3 + (stats.inertia / 7000) * 0.2);
     const statBars = [
-      { label: "Speed", val: stats.engineFwd, max: 0.50, color: "#e74c3c" },
-      { label: "Grip", val: stats.grip, max: 1.0, color: "#3498db" },
+      { label: "Beschl.", val: accel, max: 0.50, color: "#e74c3c" },
+      { label: "Haft.", val: stats.grip - 0.985, max: 0.012, color: "#3498db" },
       { label: "Tank", val: stats.maxFuel, max: 140, color: "#f39c12" },
-      { label: "Stabilität", val: stats.flipThreshold, max: 0.85, color: "#2ecc71" },
+      { label: "Stabil.", val: stability, max: 1.0, color: "#2ecc71" },
     ];
 
     const statLines = statBars.map(s => {
