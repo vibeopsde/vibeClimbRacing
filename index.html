@@ -16,11 +16,12 @@
   #levelup { position:fixed; top:28%; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.82); color:#ffd700; font-size:30px; font-weight:bold; padding:18px 36px; border-radius:16px; z-index:15; opacity:0; pointer-events:none; text-align:center; white-space:nowrap; }
   #levelup.show { animation: levelup-pop 2.2s ease forwards; }
   @keyframes levelup-pop { 0%{opacity:0;transform:translateX(-50%) scale(.5);} 12%{opacity:1;transform:translateX(-50%) scale(1.15);} 20%{transform:translateX(-50%) scale(1);} 82%{opacity:1;} 100%{opacity:0;transform:translateX(-50%) scale(1);} }
-  #controls { position:fixed; bottom:0; width:100%; display:flex; justify-content:space-between; pointer-events:none; z-index:10; }
-  .btn { pointer-events:auto; width:110px; height:90px; margin:0 24px 30px; border:none; border-radius:18px; font-size:36px; font-weight:bold; color:#fff; backdrop-filter:blur(4px); user-select:none; cursor:pointer; touch-action:none; transition:transform .08s; }
-  .btn:active { transform:scale(.92); }
-  #btn-gas { background:linear-gradient(135deg,#34d058,#28a745); margin-right:auto; margin-left:24px; }
+  #controls { position:fixed; bottom:0; left:0; right:0; width:100%; display:flex; justify-content:space-between; pointer-events:none; z-index:10; height:200px; align-items:flex-end; }
+  .pedal { pointer-events:auto; width:130px; height:130px; margin:0 20px 25px; border:none; border-radius:50%; font-size:48px; font-weight:bold; color:#fff; backdrop-filter:blur(4px); user-select:none; cursor:pointer; touch-action:none; transition:transform .06s; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 20px rgba(0,0,0,.3); }
+  .pedal:active { transform:scale(.88); }
   #btn-brake { background:linear-gradient(135deg,#ff5e3a,#d73a49); }
+  #btn-gas { background:linear-gradient(135deg,#34d058,#28a745); }
+  .pedal svg { width:52px; height:52px; }
   #gameover { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
   #gameover.show { display:flex; }
   #gameover h1 { font-size:52px; margin-bottom:12px; }
@@ -49,8 +50,22 @@
 <div id="levelup"></div>
 
 <div id="controls">
-  <button class="btn" id="btn-brake">◀</button>
-  <button class="btn" id="btn-gas">▶</button>
+  <button class="pedal" id="btn-brake" aria-label="Bremse/Rückwärts">
+    <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Brake pedal icon -->
+      <path d="M20 48 L20 20 Q20 14 26 14 L38 14 Q44 14 44 20 L44 48" />
+      <path d="M20 48 L44 48" />
+      <path d="M28 22 L28 40 M36 22 L36 40" stroke-width="2.5" opacity=".6"/>
+    </svg>
+  </button>
+  <button class="pedal" id="btn-gas" aria-label="Gas">
+    <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Gas pedal icon (accelerator) -->
+      <path d="M20 48 L20 20 Q20 14 26 14 L38 14 Q44 14 44 20 L44 48" />
+      <path d="M20 48 L44 48" />
+      <path d="M26 24 L38 24 M26 30 L38 30 M26 36 L38 36" stroke-width="2.5" opacity=".6"/>
+    </svg>
+  </button>
 </div>
 
 <div id="start">
