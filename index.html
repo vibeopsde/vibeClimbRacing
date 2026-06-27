@@ -26,7 +26,7 @@
   #version-tag { position:fixed; bottom:4px; left:50%; transform:translateX(-50%); font-size:11px; color:rgba(255,255,255,.4); pointer-events:none; z-index:25; font-family:'Segoe UI',sans-serif; text-shadow:0 1px 3px rgba(0,0,0,.8); }
 
   /* Overlay screens (shared) */
-  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.78); display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.78); display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:20px 0; }
   .overlay.hide { display:none; }
   .overlay h1 { font-size:48px; margin-bottom:8px; }
   .overlay h2 { font-size:28px; margin-bottom:16px; color:#ffd700; }
@@ -37,6 +37,11 @@
   .overlay button.danger { background:#d73a49; }
   .overlay input { font-size:22px; padding:14px 20px; border-radius:12px; border:2px solid #2d6a9f; background:#222; color:#fff; text-align:center; margin-bottom:16px; width:300px; max-width:80vw; }
   .overlay input:focus { border-color:#34d058; outline:none; }
+
+  /* Garage: scrollable on mobile, centered on desktop */
+  #garage { justify-content:flex-start; }
+  #garage h1 { margin-bottom:8px; }
+  #upgrade-list { width:100%; max-width:420px; padding-bottom:20px; }
 
   #profile-canvas { border-radius: 12px; margin: 12px 0 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4); background:rgba(0,0,0,.35); }
   #profile-stats { font-size:15px; line-height:1.8; opacity:.9; max-width:460px; }

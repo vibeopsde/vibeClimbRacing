@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.0";
+const VERSION = "v2606.2.1";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
