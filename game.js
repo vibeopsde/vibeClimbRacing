@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.4";
+const VERSION = "v2606.2.5";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -160,9 +160,10 @@ const SAVE_KEY = "vcr_save_v1";
 function defaultVehicleUpgrades() {
   return { motor: 0, tires: 0, tank: 0 };
 }
+// Hardcoded vehicle keys (VEHICLES is declared later — can't reference it here)
 function defaultAllUpgrades() {
   const u = {};
-  for (const k of Object.keys(VEHICLES)) u[k] = defaultVehicleUpgrades();
+  for (const k of ["jeep", "truck", "bike"]) u[k] = defaultVehicleUpgrades();
   return u;
 }
 
