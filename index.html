@@ -23,6 +23,8 @@
   #btn-gas { background:linear-gradient(135deg,#34d058,#28a745); }
   .pedal svg { width:52px; height:52px; }
 
+  #version-tag { position:fixed; bottom:6px; left:50%; transform:translateX(-50%); font-size:11px; color:rgba(255,255,255,.35); pointer-events:none; z-index:5; font-family:'Segoe UI',sans-serif; }
+
   /* Overlay screens (shared) */
   .overlay { position:fixed; inset:0; background:rgba(0,0,0,.78); display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
   .overlay.hide { display:none; }
@@ -82,6 +84,8 @@
     </svg>
   </button>
 </div>
+
+<div id="version-tag"></div>
 
 <!-- Name Input -->
 <div id="nameinput" class="overlay">

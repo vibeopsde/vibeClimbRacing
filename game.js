@@ -4,6 +4,8 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
+const VERSION = "1.3.0";
+
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
 const FUEL_PICKUP_DIST_SQ = 2500;  // fuel pickup distance²
@@ -1471,6 +1473,7 @@ document.getElementById("mute-badge").addEventListener("click", () => {
 });
 
 // ── Boot: show name input or start screen ──
+document.getElementById("version-tag").textContent = `v${VERSION}`;
 if (saveData.name) {
   document.getElementById("nameinput").classList.add("hide");
   showStartScreen();
