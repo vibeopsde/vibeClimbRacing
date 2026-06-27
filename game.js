@@ -463,9 +463,10 @@ class Car {
     // Clamp fuel
     if (this.fuel < 0) this.fuel = 0;
 
-    // Death: flipped for > 2 seconds
+    // Death: flipped AND on ground → game over (looping in air is fine!)
     const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    if (normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4) {
+    const flipped = normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4;
+    if (flipped && this.onGround) {
       this.flipTime += dt;
       if (this.flipTime > FLIP_DEATH_TIME) this.dead = true;
     } else {
