@@ -236,7 +236,19 @@ function difficultyAt(x) {
 let controlPoints = []; // {x, y} in world coords
 
 function resetTerrain() {
+  // Start with a few random control points so terrain is interesting from the get-go
+  // (flat zone x<400 still enforced by terrainHeight, so first point can be wild)
   controlPoints = [{ x: 0, y: BASE_Y }];
+  // Pre-generate a few wild points so the terrain doesn't slowly ramp up
+  let lastY = BASE_Y;
+  for (let i = 1; i <= 5; i++) {
+    const interval = 120 + Math.random() * 280;
+    const nextX = controlPoints[i - 1].x + interval;
+    const drift = (Math.random() - 0.5) * 160; // strong initial drift, no difficulty scaling
+    const pull = (BASE_Y - lastY) * 0.08;
+    lastY = lastY + drift + pull;
+    controlPoints.push({ x: nextX, y: lastY });
+  }
 }
 
 // Generate control points ahead of the given x-coordinate
@@ -1175,7 +1187,9 @@ function drawRunProfile() {
   const cv = document.getElementById("profile-canvas");
   const dpr = window.devicePixelRatio || 1;
   const cw = Math.min(440, window.innerWidth - 60);
-  const ch = 160;
+  // Scale canvas height with distance so the profile stays readable on long runs
+  const distMeters = Math.max(distance, 100);
+  const ch = Math.min(280, 140 + Math.floor(distMeters / 1000) * 24);
   cv.width = cw * dpr;
   cv.height = ch * dpr;
   cv.style.width = cw + "px";
