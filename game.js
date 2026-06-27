@@ -18,6 +18,10 @@ const CAM_Y_MIN = -400;            // camera Y clamp (upper)
 const CAM_Y_MAX = 200;             // camera Y clamp (lower)
 const FLIP_DEATH_TIME = 0.3;       // seconds upside-down before death (near-instant, like original)
 const LOOPING_BONUS = 10;         // coins awarded per full loop (360° rotation in air)
+const SPRING_K = 0.05;            // suspension spring stiffness
+const SPRING_DAMP = 0.05;         // suspension damping (velocity-proportional, only on compression)
+const SUSP_TORQUE = 0.0;          // pitch torque disabled — causes spin deaths, lift alone is enough
+const MAX_SPRING = 15;            // max spring compression before hard stop (px)
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -344,6 +348,13 @@ class Car {
     this.flipTime = 0;
     this.airSpin = 0;          // accumulated rotation in air (for loop detection)
 
+    // Independent suspension — one spring per wheel
+    // springL/R: current compression (0 = fully extended, positive = compressed)
+    this.springL = 0;
+    this.springR = 0;
+    this.springVelL = 0;      // spring compression velocity
+    this.springVelR = 0;
+
     // Apply upgrades from save
     const u = saveData.upgrades;
     const mUp = UPGRADES.motor.apply(u.motor);
@@ -409,8 +420,11 @@ class Car {
     // Angular damping + air control
     this.angVel *= ANG_DAMP;
     if (!this.onGround) {
-      if (gas) this.angVel -= 0.008 * dts;  // rotate backward (wheelie)
-      if (brake) this.angVel += 0.008 * dts; // rotate forward (endo)
+      // Air control: gentle nudge, capped — for wheelie/endo adjustment, not death spins
+      // Loopings happen from terrain launches + angular momentum, NOT from holding gas
+      const AIR_CONTROL = 0.002;
+      if (gas) this.angVel = Math.max(this.angVel - AIR_CONTROL * dts, -0.04);
+      if (brake) this.angVel = Math.min(this.angVel + AIR_CONTROL * dts, 0.04);
     }
 
     // Integrate
@@ -427,10 +441,14 @@ class Car {
     }
     this.loopCompleted = Math.abs(this.airSpin) >= Math.PI * 2;
 
-    // ── Ground collision (direct snap, no bounce) ──
-    // Wheel positions for slope detection
+    // ── Independent suspension collision (per-wheel springs) ──
+    // Each wheel checks ground independently, compresses its spring,
+    // and applies force → vertical push + pitch torque
     const halfWB = this.wheelBase / 2;
     const wheelOffset = this.wheelOffset;
+    const restLen = wheelOffset + this.wheelRadius; // rest length: center to wheel-bottom
+
+    // Wheel-bottom world positions (at rest, no compression)
     const wlX = this.x - fwdX * halfWB - fwdY * wheelOffset;
     const wrX = this.x + fwdX * halfWB - fwdY * wheelOffset;
 
@@ -438,29 +456,103 @@ class Car {
     const groundL = terrain.groundAt(wlX);
     const groundR = terrain.groundAt(wrX);
 
-    // Car bottom = wheel bottom (center + wheelOffset + wheelRadius)
-    // We want the wheel BOTTOM to rest ON the ground, not the center
-    const carBottom = this.y + wheelOffset + this.wheelRadius;
+    // Wheel-bottom Y positions (accounting for current spring compression)
+    const wBottomL = this.y + wheelOffset - this.springL + this.wheelRadius;
+    const wBottomR = this.y + wheelOffset - this.springR + this.wheelRadius;
+
+    // Penetration depth per wheel (how far into ground)
+    const penL = Math.max(0, wBottomL - groundL);
+    const penR = Math.max(0, wBottomR - groundR);
+
+    // On ground if either wheel touches
+    this.onGround = (penL > 0 || penR > 0);
+
+    // ── Spring physics per wheel ──
+    let totalLift = 0;
+    let pitchTorque = 0;
+
+    for (const side of [-1, 1]) {
+      const pen = side === -1 ? penL : penR;
+      const spring = side === -1 ? this.springL : this.springR;
+      const springVel = side === -1 ? this.springVelL : this.springVelR;
+
+      if (pen > 0) {
+        // Compression target = penetration depth (capped)
+        const target = Math.min(pen, MAX_SPRING);
+        // Spring force pushes wheel down → body up
+        const force = (target - spring) * SPRING_K;
+        // Damping only on compression (resist fast compression, allow rebound)
+        const dampForce = springVel > 0 ? springVel * SPRING_DAMP : 0;
+        const totalForce = force - dampForce;
+
+        // Update spring state
+        if (side === -1) {
+          this.springVelL += totalForce * dts;
+          this.springL += this.springVelL * dts;
+          if (this.springL < 0) { this.springL = 0; this.springVelL = 0; }
+          if (this.springL > MAX_SPRING) { this.springL = MAX_SPRING; this.springVelL *= -0.3; }
+        } else {
+          this.springVelR += totalForce * dts;
+          this.springR += this.springVelR * dts;
+          if (this.springR < 0) { this.springR = 0; this.springVelR = 0; }
+          if (this.springR > MAX_SPRING) { this.springR = MAX_SPRING; this.springVelR *= -0.3; }
+        }
+
+        // Lift = spring force pushes car body up
+        const lift = totalForce;
+        totalLift += lift;
+
+        // Pitch torque: front wheel (side=1) pushes nose up, rear (side=-1) pushes nose down
+        pitchTorque += side * lift * SUSP_TORQUE;
+
+        // Rolling friction when grounded
+        this.vx *= this.grip;
+
+        // Terrain-following vy (only if both wheels grounded or light single-wheel)
+        if (penL > 0 && penR > 0) {
+          const slope = terrain.slopeAt(this.x);
+          this.vy = slope * this.vx;
+        }
+      } else {
+        // Wheel in air — spring rebounds to rest
+        if (side === -1) {
+          this.springL *= 0.85;
+          this.springVelL *= 0.85;
+        } else {
+          this.springR *= 0.85;
+          this.springVelR *= 0.85;
+        }
+      }
+    }
+
+    // Apply accumulated lift to car body
+    if (totalLift !== 0) {
+      this.vy -= totalLift * dts;
+    }
+
+    // Apply pitch torque from suspension — ONLY when car is roughly level
+    // (prevents suspension from spinning an already-rotating car out of control)
+    if (pitchTorque !== 0) {
+      const absAngle = Math.abs(((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2));
+      const levelish = absAngle < Math.PI * 0.4 || absAngle > Math.PI * 1.6;
+      if (levelish) {
+        this.angVel += pitchTorque * dts;
+      }
+    }
+
+    // Hard snap if deeply penetrated (prevents sinking through ground)
+    const carBottom = this.y + restLen;
     const avgGround = (groundL + groundR) / 2;
-
-    this.onGround = false;
-
-    // Snap to ground when at/below terrain (no vy>=0 gate — terrain-following vy handles launches)
-    if (carBottom >= avgGround) {
-      this.y = avgGround - wheelOffset - this.wheelRadius;
-      this.onGround = true;
-      // Instead of vy=0, inherit terrain-following vertical velocity.
-      const slope = terrain.slopeAt(this.x);
-      this.vy = slope * this.vx;
-      // Rolling friction (upgradeable)
-      this.vx *= this.grip;
+    if (carBottom > avgGround + MAX_SPRING) {
+      this.y = avgGround - restLen + MAX_SPRING * 0.5;
+      this.vy = Math.min(this.vy, 0);
     }
 
     // ── Slope alignment when grounded (skip if upside-down!) ──
     if (this.onGround) {
-      // Check if car is upside-down (roof on ground)
+      // Check if car is upside-down (roof on ground) — tighter threshold matches flip check
       const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-      const upsideDown = normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4;
+      const upsideDown = normAngle > Math.PI * 0.75 && normAngle < Math.PI * 1.25;
       if (!upsideDown) {
         this.angVel *= 0.6;
         // Target angle = terrain slope angle
@@ -484,8 +576,9 @@ class Car {
     if (this.fuel < 0) this.fuel = 0;
 
     // Death: flipped AND on ground → game over (looping in air is fine!)
+    // Use tighter threshold so near-miss landings don't trigger death
     const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    const flipped = normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4;
+    const flipped = normAngle > Math.PI * 0.75 && normAngle < Math.PI * 1.25;
     if (flipped && this.onGround) {
       this.flipTime += dt;
       if (this.flipTime > FLIP_DEATH_TIME) this.dead = true;
@@ -498,7 +591,7 @@ class Car {
     const sx = this.x - camX;
     const sy = this.y - camY;
 
-    // ── Wheels (drawn first, behind body) ──
+    // ── Wheels (drawn first, behind body) with suspension compression ──
     const fwdX = Math.cos(this.angle);
     const fwdY = Math.sin(this.angle);
     const perpX = -fwdY;
@@ -507,8 +600,11 @@ class Car {
     const wy = this.wheelOffset;
 
     for (const sign of [-1, 1]) {
-      const wx = this.x + fwdX * (halfWB * sign) + perpX * wy;
-      const wyy = this.y + fwdY * (halfWB * sign) + perpY * wy;
+      // Apply spring compression to wheel position (pushed up = compressed)
+      const springComp = sign === -1 ? this.springL : this.springR;
+      const suspOffset = wy - springComp; // wheel moves up when spring compresses
+      const wx = this.x + fwdX * (halfWB * sign) + perpX * suspOffset;
+      const wyy = this.y + fwdY * (halfWB * sign) + perpY * suspOffset;
       ctx.save();
       ctx.translate(wx - camX, wyy - camY);
       ctx.rotate(this.angle);
