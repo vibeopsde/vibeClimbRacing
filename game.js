@@ -125,8 +125,8 @@ class Car {
     const dts = dt * 60; // delta in "frame units"
 
     // ── Physics constants ──
-    const GRAVITY = 0.55;
-    const ENGINE_FWD = 0.35;
+    const GRAVITY = 0.40;
+    const ENGINE_FWD = 0.38;
     const ENGINE_BACK = 0.45;
     const AIR_DRAG = 0.995;
     const ANG_DAMP = 0.96;
