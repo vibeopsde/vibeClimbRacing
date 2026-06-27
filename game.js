@@ -214,9 +214,17 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// ── Difficulty scaling — every 1000m the terrain gets rougher ──
+// ── Difficulty scaling — every 1000m the terrain gets rougher (smooth transition) ──
 function difficultyAt(x) {
-  return 1 + Math.floor(x / 10000) * 0.35; // +35% amplitude per 1000m
+  const LEVEL_DIST = 10000;    // 1000m in world units (x is in decimeters)
+  const TRANSITION = 500;     // smooth transition zone in world units
+  const levelX = x / LEVEL_DIST;
+  const baseLevel = Math.floor(levelX);
+  const frac = levelX - baseLevel;
+  // smoothstep: 0 at boundary start, 1 at boundary end, smooth in between
+  const t = Math.max(0, Math.min(1, (frac * LEVEL_DIST - (LEVEL_DIST - TRANSITION)) / TRANSITION));
+  const smooth = t * t * (3 - 2 * t);  // classic smoothstep
+  return 1 + (baseLevel + smooth * 0.35) * 0.35;
 }
 
 // ── Noise (layered sines, scaled by difficulty) ──
