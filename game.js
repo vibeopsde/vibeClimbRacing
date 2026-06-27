@@ -438,16 +438,16 @@ class Car {
     const groundL = terrain.groundAt(wlX);
     const groundR = terrain.groundAt(wrX);
 
-    // Car bottom = center + wheelOffset (when flat)
-    // We want the wheels to rest ON the ground
-    const carBottom = this.y + wheelOffset;
+    // Car bottom = wheel bottom (center + wheelOffset + wheelRadius)
+    // We want the wheel BOTTOM to rest ON the ground, not the center
+    const carBottom = this.y + wheelOffset + this.wheelRadius;
     const avgGround = (groundL + groundR) / 2;
 
     this.onGround = false;
 
     // Snap to ground when at/below terrain (no vy>=0 gate — terrain-following vy handles launches)
     if (carBottom >= avgGround) {
-      this.y = avgGround - wheelOffset;
+      this.y = avgGround - wheelOffset - this.wheelRadius;
       this.onGround = true;
       // Instead of vy=0, inherit terrain-following vertical velocity.
       const slope = terrain.slopeAt(this.x);
@@ -497,14 +497,6 @@ class Car {
   draw(ctx, camX, camY) {
     const sx = this.x - camX;
     const sy = this.y - camY;
-
-    // ── Shadow under car ──
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.2)";
-    ctx.beginPath();
-    ctx.ellipse(sx, sy + this.wheelOffset + 2, 42, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
 
     // ── Wheels (drawn first, behind body) ──
     const fwdX = Math.cos(this.angle);
