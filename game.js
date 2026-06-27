@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.5";
+const VERSION = "v2606.2.6";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -1270,6 +1270,9 @@ function render() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
+  // Clouds (drawn BEFORE hills so they appear behind them)
+  clouds.draw(ctx, camX);
+
   // Far hills (parallax background)
   ctx.fillStyle = "rgba(46, 139, 87, 0.3)";
   ctx.beginPath();
@@ -1297,9 +1300,6 @@ function render() {
   ctx.lineTo(W, H);
   ctx.closePath();
   ctx.fill();
-
-  // Clouds
-  clouds.draw(ctx, camX);
 
   // Terrain
   ctx.fillStyle = "#8B6F47";
