@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.6";
+const VERSION = "v2606.2.7";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -189,7 +189,8 @@ function loadSave() {
         upgrades.jeep = { motor: s.upgrades.motor, tires: s.upgrades.tires, tank: s.upgrades.tank };
       } else {
         // New per-vehicle format: merge each vehicle's upgrades
-        for (const k of Object.keys(VEHICLES)) {
+        // Hardcoded keys — VEHICLES may not be declared yet at loadSave() call time
+        for (const k of ["jeep", "truck", "bike"]) {
           if (s.upgrades[k]) upgrades[k] = { ...defaultVehicleUpgrades(), ...s.upgrades[k] };
         }
       }
