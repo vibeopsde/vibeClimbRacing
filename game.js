@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.1.4";
+const VERSION = "v2606.2.0";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -161,6 +161,8 @@ const DEFAULT_SAVE = {
   wallet: 0,          // persistent coins across runs
   best: { distance: 0, level: 1, coins: 0 },
   upgrades: { motor: 0, tires: 0, tank: 0 },
+  vehicle: "jeep",            // currently selected vehicle key
+  unlockedVehicles: ["jeep"], // array of unlocked vehicle keys
 };
 
 function loadSave() {
@@ -168,7 +170,14 @@ function loadSave() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return { ...DEFAULT_SAVE };
     const s = JSON.parse(raw);
-    return { ...DEFAULT_SAVE, ...s, best: { ...DEFAULT_SAVE.best, ...(s.best||{}) }, upgrades: { ...DEFAULT_SAVE.upgrades, ...(s.upgrades||{}) } };
+    return {
+      ...DEFAULT_SAVE,
+      ...s,
+      best: { ...DEFAULT_SAVE.best, ...(s.best||{}) },
+      upgrades: { ...DEFAULT_SAVE.upgrades, ...(s.upgrades||{}) },
+      unlockedVehicles: s.unlockedVehicles || ["jeep"],
+      vehicle: s.vehicle || "jeep",
+    };
   } catch (e) { return { ...DEFAULT_SAVE }; }
 }
 
@@ -202,6 +211,125 @@ const UPGRADES = {
     maxLevel: 5,
     costs: [100, 250, 500, 1000, 2000],
     apply: (lvl) => ({ maxFuel: 100 + 20 * lvl, drainRate: 0.05 * (1 - 0.08 * lvl), passiveDrain: 0.006 * (1 - 0.08 * lvl) }),
+  },
+};
+
+// ════════════════════════════════════════
+// VEHICLES — selectable cars with unique physics & appearance
+// ════════════════════════════════════════
+const VEHICLES = {
+  jeep: {
+    name: "🚙 Jeep",
+    desc: "Ausgewogen — solide Allround-Werte",
+    unlockCost: 0,  // default, free
+    // Base physics (before upgrades)
+    base: {
+      wheelBase: 70,
+      wheelRadius: 20,
+      mass: 1.5,
+      inertia: 4500,
+      engineFwd: 0.38,
+      engineBack: 0.45,
+      grip: 0.992,
+      slopeAlign: 0.10,
+      maxFuel: 100,
+      drainRate: 0.05,
+      passiveDrain: 0.006,
+      flipThreshold: 0.75,  // π multiplier — tighter = harder to flip
+    },
+    // Visual params for draw()
+    visual: {
+      bodyColor: "#e74c3c",
+      bodyDark: "#c0392b",
+      bodyStroke: "#922b21",
+      cabinColor: "#34495e",
+      cabinDark: "#2c3e50",
+      wheelColor: "#1a1a1a",
+      bodyWidth: 80,
+      bodyHeight: 24,
+      cabinWidth: 38,
+      cabinHeight: 20,
+      cabinOffset: -18,   // cabin X offset from center
+      hoodSlope: true,     // has sloped hood
+      hasRollBar: true,
+      hasExhaust: true,
+      hasSkidPlate: true,
+      driverHelmetColor: "#e74c3c",
+    },
+  },
+  truck: {
+    name: "🛻 Truck",
+    desc: "Schwer & stabil — schwer umzukippen, aber träge",
+    unlockCost: 500,
+    base: {
+      wheelBase: 80,
+      wheelRadius: 24,
+      mass: 2.2,
+      inertia: 6500,
+      engineFwd: 0.34,
+      engineBack: 0.40,
+      grip: 0.990,
+      slopeAlign: 0.08,
+      maxFuel: 120,
+      drainRate: 0.06,
+      passiveDrain: 0.007,
+      flipThreshold: 0.80,  // harder to flip (heavier, lower center)
+    },
+    visual: {
+      bodyColor: "#2980b9",
+      bodyDark: "#1f6aa5",
+      bodyStroke: "#154e7c",
+      cabinColor: "#2c3e50",
+      cabinDark: "#1a2530",
+      wheelColor: "#1a1a1a",
+      bodyWidth: 90,
+      bodyHeight: 30,
+      cabinWidth: 44,
+      cabinHeight: 24,
+      cabinOffset: -22,
+      hoodSlope: true,
+      hasRollBar: true,
+      hasExhaust: true,
+      hasSkidPlate: true,
+      driverHelmetColor: "#2980b9",
+    },
+  },
+  bike: {
+    name: "🏍️ Bike",
+    desc: "Schnell & wendig — leicht zu kippen, aber agil",
+    unlockCost: 800,
+    base: {
+      wheelBase: 50,
+      wheelRadius: 16,
+      mass: 0.9,
+      inertia: 2200,
+      engineFwd: 0.42,
+      engineBack: 0.50,
+      grip: 0.994,
+      slopeAlign: 0.12,
+      maxFuel: 70,
+      drainRate: 0.04,
+      passiveDrain: 0.005,
+      flipThreshold: 0.65,  // easier to flip (light, short wheelbase)
+    },
+    visual: {
+      bodyColor: "#2ecc71",
+      bodyDark: "#27ae60",
+      bodyStroke: "#1e8449",
+      cabinColor: "#2c3e50",
+      cabinDark: "#1a2530",
+      wheelColor: "#1a1a1a",
+      bodyWidth: 56,
+      bodyHeight: 18,
+      cabinWidth: 20,
+      cabinHeight: 14,
+      cabinOffset: -8,
+      hoodSlope: false,   // no hood slope — bike shape
+      hasRollBar: false,
+      hasExhaust: true,
+      hasSkidPlate: false,
+      driverHelmetColor: "#2ecc71",
+    },
   },
 };
 
@@ -388,11 +516,6 @@ class Car {
     this.vy = 0;
     this.angle = 0;
     this.angVel = 0;
-    this.wheelBase = 70;
-    this.wheelRadius = 20;
-    this.wheelOffset = this.wheelRadius; // wheels sit ON ground, not in it
-    this.mass = 1.5;
-    this.inertia = 4500;
     this.onGround = false;
     this.dead = false;
     this.flipTime = 0;
@@ -402,18 +525,38 @@ class Car {
     this.springL = 0;
     this.springR = 0;
 
-    // Apply upgrades from save
+    // ── Load vehicle stats from VEHICLES (base) × UPGRADES (multipliers) ──
+    const vDef = VEHICLES[saveData.vehicle] || VEHICLES.jeep;
+    const vb = vDef.base;
+    this.vehicleKey = saveData.vehicle || "jeep";
+    this.visual = vDef.visual;
+
+    this.wheelBase = vb.wheelBase;
+    this.wheelRadius = vb.wheelRadius;
+    this.wheelOffset = this.wheelRadius;
+    this.mass = vb.mass;
+    this.inertia = vb.inertia;
+    this.flipThreshold = vb.flipThreshold;  // π multiplier for flip detection
+
+    // Apply upgrades as multipliers on top of vehicle base
     const u = saveData.upgrades;
     const mUp = UPGRADES.motor.apply(u.motor);
     const tUp = UPGRADES.tires.apply(u.tires);
     const fUp = UPGRADES.tank.apply(u.tank);
-    this.engineFwd = mUp.engineFwd;
-    this.engineBack = mUp.engineBack;
-    this.grip = tUp.grip;
-    this.slopeAlign = tUp.slopeAlign;
-    this.maxFuel = fUp.maxFuel;
-    this.drainRate = fUp.drainRate;
-    this.passiveDrain = fUp.passiveDrain;
+
+    // Motor upgrade: percentage boost on vehicle's base engine force
+    this.engineFwd = vb.engineFwd * (1 + 0.1 * u.motor);
+    this.engineBack = vb.engineBack * (1 + 0.1 * u.motor);
+
+    // Tires upgrade: grip + slopeAlign improvement on vehicle's base
+    this.grip = vb.grip + 0.001 * u.tires;
+    this.slopeAlign = vb.slopeAlign + 0.02 * u.tires;
+
+    // Tank upgrade: capacity + drain reduction on vehicle's base
+    this.maxFuel = vb.maxFuel * (1 + 0.1 * u.tank);
+    this.drainRate = vb.drainRate * (1 - 0.08 * u.tank);
+    this.passiveDrain = vb.passiveDrain * (1 - 0.08 * u.tank);
+
     this.fuel = this.maxFuel;
   }
 
@@ -553,7 +696,7 @@ class Car {
     if (this.onGround) {
       // Check if car is upside-down (roof on ground) — tighter threshold matches flip check
       const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-      const upsideDown = normAngle > Math.PI * 0.75 && normAngle < Math.PI * 1.25;
+      const upsideDown = normAngle > Math.PI * this.flipThreshold && normAngle < Math.PI * (2 - this.flipThreshold);
       if (!upsideDown) {
         this.angVel *= 0.6;
         // Target angle = terrain slope angle
@@ -579,7 +722,7 @@ class Car {
     // Death: flipped AND on ground → game over (looping in air is fine!)
     // Use tighter threshold so near-miss landings don't trigger death
     const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
-    const flipped = normAngle > Math.PI * 0.75 && normAngle < Math.PI * 1.25;
+    const flipped = normAngle > Math.PI * this.flipThreshold && normAngle < Math.PI * (2 - this.flipThreshold);
     if (flipped && this.onGround) {
       this.flipTime += dt;
       if (this.flipTime > FLIP_DEATH_TIME) this.dead = true;
@@ -662,100 +805,117 @@ class Car {
       ctx.restore();
     }
 
-    // ── Car body (drawn after wheels) ──
+    // ── Car body (drawn after wheels) — parametrized via this.visual ──
     ctx.save();
     ctx.translate(sx, sy);
     ctx.rotate(this.angle);
 
-    // Suspension arms (connecting wheels to body)
+    const v = this.visual;
+    const bw = v.bodyWidth, bh = v.bodyHeight;
+    const bx = -bw / 2, by = -(bh - 4);  // body top-left
+    const cw = v.cabinWidth, ch = v.cabinHeight;
+    const cx = v.cabinOffset, cy = by - ch + 2;  // cabin sits on top of body
+
+    // Suspension arms (connecting wheels to body) — scale with wheelBase
     ctx.strokeStyle = "#555";
     ctx.lineWidth = 4;
     ctx.lineCap = "round";
+    const armInner = this.wheelBase * 0.35;
+    const armOuter = this.wheelBase * 0.5;
     for (const sign of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(sign * 25, 0);
-      ctx.lineTo(sign * 35, this.wheelOffset - 4);
+      ctx.moveTo(sign * armInner, 0);
+      ctx.lineTo(sign * armOuter, this.wheelOffset - 4);
       ctx.stroke();
     }
 
-    // Main body — rounded red chassis with gradient
-    const bodyGrad = ctx.createLinearGradient(0, -20, 0, 10);
-    bodyGrad.addColorStop(0, "#e74c3c");
-    bodyGrad.addColorStop(1, "#c0392b");
+    // Main body chassis with gradient
+    const bodyGrad = ctx.createLinearGradient(0, by, 0, by + bh);
+    bodyGrad.addColorStop(0, v.bodyColor);
+    bodyGrad.addColorStop(1, v.bodyDark);
     ctx.fillStyle = bodyGrad;
-    ctx.strokeStyle = "#922b21";
+    ctx.strokeStyle = v.bodyStroke;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-40, -20, 80, 24, 8);
+    ctx.roundRect(bx, by, bw, bh, 8);
     ctx.fill();
     ctx.stroke();
 
-    // Lower body skid plate (darker)
-    ctx.fillStyle = "#7f8c8d";
-    ctx.beginPath();
-    ctx.roundRect(-38, 0, 76, 6, 3);
-    ctx.fill();
+    // Skid plate (darker, lower body)
+    if (v.hasSkidPlate) {
+      ctx.fillStyle = "#7f8c8d";
+      ctx.beginPath();
+      ctx.roundRect(bx + 2, by + bh - 6, bw - 4, 6, 3);
+      ctx.fill();
+    }
 
-    // Hood (front, sloped)
-    ctx.fillStyle = "#c0392b";
-    ctx.beginPath();
-    ctx.moveTo(20, -20);
-    ctx.lineTo(40, -20);
-    ctx.lineTo(42, -28);
-    ctx.lineTo(22, -28);
-    ctx.closePath();
-    ctx.fill();
+    // Hood (front, sloped) — only for vehicles with hoodSlope
+    if (v.hoodSlope) {
+      ctx.fillStyle = v.bodyDark;
+      ctx.beginPath();
+      ctx.moveTo(bw / 2 - 20, by);
+      ctx.lineTo(bw / 2, by);
+      ctx.lineTo(bw / 2 + 2, by - 8);
+      ctx.lineTo(bw / 2 - 18, by - 8);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // Cabin (darker, rounded)
-    const cabinGrad = ctx.createLinearGradient(0, -40, 0, -20);
-    cabinGrad.addColorStop(0, "#34495e");
-    cabinGrad.addColorStop(1, "#2c3e50");
+    const cabinGrad = ctx.createLinearGradient(0, cy, 0, cy + ch);
+    cabinGrad.addColorStop(0, v.cabinColor);
+    cabinGrad.addColorStop(1, v.cabinDark);
     ctx.fillStyle = cabinGrad;
     ctx.beginPath();
-    ctx.roundRect(-18, -38, 38, 20, 6);
+    ctx.roundRect(cx, cy, cw, ch, 6);
     ctx.fill();
 
     // Windshield (tinted blue)
-    const winGrad = ctx.createLinearGradient(0, -36, 0, -22);
+    const winGrad = ctx.createLinearGradient(0, cy + 2, 0, cy + ch - 6);
     winGrad.addColorStop(0, "#85c1e9");
     winGrad.addColorStop(1, "#5dade2");
     ctx.fillStyle = winGrad;
     ctx.beginPath();
-    ctx.roundRect(-14, -35, 16, 14, 3);
+    ctx.roundRect(cx + 4, cy + 3, cw * 0.42, ch - 6, 3);
     ctx.fill();
 
     // Side window
     ctx.fillStyle = "#aed6f1";
     ctx.beginPath();
-    ctx.roundRect(4, -35, 14, 14, 3);
+    ctx.roundRect(cx + cw * 0.5, cy + 3, cw * 0.4, ch - 6, 3);
     ctx.fill();
 
     // Roll bar (behind cabin)
-    ctx.strokeStyle = "#555";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(-18, -38);
-    ctx.lineTo(-18, -20);
-    ctx.stroke();
+    if (v.hasRollBar) {
+      ctx.strokeStyle = "#555";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, by);
+      ctx.stroke();
+    }
 
-    // Driver head with helmet
+    // Driver head with helmet — positioned at cabin center
+    const drvX = cx + cw / 2 - 3;
+    const drvY = cy + ch / 2;
+    const headR = Math.min(6, ch * 0.3);
     ctx.fillStyle = "#f9e79f";
     ctx.beginPath();
-    ctx.arc(-2, -28, 6, 0, Math.PI * 2);
+    ctx.arc(drvX, drvY, headR, 0, Math.PI * 2);
     ctx.fill();
     // Helmet
-    ctx.fillStyle = "#e74c3c";
+    ctx.fillStyle = v.driverHelmetColor;
     ctx.beginPath();
-    ctx.arc(-2, -30, 7, Math.PI, 0);
+    ctx.arc(drvX, drvY - 2, headR + 1, Math.PI, 0);
     ctx.fill();
     // Helmet visor
     ctx.fillStyle = "#2c3e50";
-    ctx.fillRect(-2, -31, 6, 3);
+    ctx.fillRect(drvX, drvY - 3, 6, 3);
 
     // Headlight (front)
     ctx.fillStyle = "#fffacd";
     ctx.beginPath();
-    ctx.arc(38, -12, 4, 0, Math.PI * 2);
+    ctx.arc(bw / 2 - 2, by + 8, 4, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#f39c12";
     ctx.lineWidth = 1;
@@ -764,21 +924,23 @@ class Car {
     // Taillight (back)
     ctx.fillStyle = "#e74c3c";
     ctx.beginPath();
-    ctx.arc(-38, -12, 3, 0, Math.PI * 2);
+    ctx.arc(-(bw / 2 - 2), by + 8, 3, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#c0392b";
     ctx.stroke();
 
     // Exhaust pipe (back)
-    ctx.fillStyle = "#7f8c8d";
-    ctx.fillRect(-44, -8, 6, 4);
+    if (v.hasExhaust) {
+      ctx.fillStyle = "#7f8c8d";
+      ctx.fillRect(-(bw / 2 + 4), by + 12, 6, 4);
+    }
 
     // Side detail line
-    ctx.strokeStyle = "#a93226";
+    ctx.strokeStyle = v.bodyDark;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(-35, -8);
-    ctx.lineTo(35, -8);
+    ctx.moveTo(bx + 5, by + 12);
+    ctx.lineTo(bw / 2 - 5, by + 12);
     ctx.stroke();
 
     ctx.restore();
@@ -1428,6 +1590,62 @@ function renderGarage() {
   const list = document.getElementById("upgrade-list");
   list.innerHTML = "";
 
+  // ── Section 1: Vehicle Selection ──
+  const vehicleHeader = document.createElement("div");
+  vehicleHeader.className = "garage-section-header";
+  vehicleHeader.textContent = "🚗 FAHRZEUG WÄHLEN";
+  list.appendChild(vehicleHeader);
+
+  for (const [key, veh] of Object.entries(VEHICLES)) {
+    const isUnlocked = saveData.unlockedVehicles.includes(key);
+    const isSelected = saveData.vehicle === key;
+    const canAfford = saveData.wallet >= veh.unlockCost;
+    const canBuy = !isUnlocked && canAfford;
+
+    const card = document.createElement("div");
+    card.className = `upgrade-card vehicle-card ${isSelected ? "selected" : ""}`;
+
+    const stats = veh.base;
+    const statBars = [
+      { label: "Speed", val: stats.engineFwd, max: 0.50, color: "#e74c3c" },
+      { label: "Grip", val: stats.grip, max: 1.0, color: "#3498db" },
+      { label: "Tank", val: stats.maxFuel, max: 140, color: "#f39c12" },
+      { label: "Stabilität", val: stats.flipThreshold, max: 0.85, color: "#2ecc71" },
+    ];
+
+    const statLines = statBars.map(s => {
+      const pct = Math.min(100, (s.val / s.max) * 100);
+      return `<div class="stat-row"><span class="stat-label">${s.label}</span><div class="stat-bar"><div class="stat-fill" style="width:${pct}%;background:${s.color}"></div></div></div>`;
+    }).join("");
+
+    let actionHtml;
+    if (isSelected) {
+      actionHtml = `<button class="buy maxed">✓ AKTIV</button>`;
+    } else if (isUnlocked) {
+      actionHtml = `<button class="buy select-btn" data-vehicle="${key}">WÄHLEN</button>`;
+    } else if (canBuy) {
+      actionHtml = `<button class="buy unlock-btn" data-vehicle="${key}">🪙 ${veh.unlockCost}</button>`;
+    } else {
+      actionHtml = `<button class="buy" disabled>🪙 ${veh.unlockCost}</button>`;
+    }
+
+    card.innerHTML = `
+      <div class="info">
+        <div class="name">${veh.name}</div>
+        <div class="desc">${veh.desc}</div>
+        <div class="vehicle-stats">${statLines}</div>
+      </div>
+      ${actionHtml}
+    `;
+    list.appendChild(card);
+  }
+
+  // ── Section 2: Upgrades ──
+  const upgradeHeader = document.createElement("div");
+  upgradeHeader.className = "garage-section-header";
+  upgradeHeader.textContent = "🔧 UPGRADES";
+  list.appendChild(upgradeHeader);
+
   for (const [key, up] of Object.entries(UPGRADES)) {
     const lvl = saveData.upgrades[key];
     const maxed = lvl >= up.maxLevel;
@@ -1451,7 +1669,35 @@ function renderGarage() {
     list.appendChild(card);
   }
 
-  // Bind buy buttons
+  // Bind vehicle select buttons
+  list.querySelectorAll(".select-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.vehicle;
+      if (!saveData.unlockedVehicles.includes(key)) return;
+      saveData.vehicle = key;
+      saveSave();
+      sfx.coin();
+      renderGarage();
+    });
+  });
+
+  // Bind vehicle unlock buttons
+  list.querySelectorAll(".unlock-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.vehicle;
+      const veh = VEHICLES[key];
+      if (saveData.unlockedVehicles.includes(key)) return;
+      if (saveData.wallet < veh.unlockCost) return;
+      saveData.wallet -= veh.unlockCost;
+      saveData.unlockedVehicles.push(key);
+      saveData.vehicle = key;  // auto-select newly unlocked vehicle
+      saveSave();
+      sfx.levelUp();
+      renderGarage();
+    });
+  });
+
+  // Bind upgrade buy buttons
   list.querySelectorAll(".buy[data-upgrade]").forEach(btn => {
     btn.addEventListener("click", () => {
       const key = btn.dataset.upgrade;

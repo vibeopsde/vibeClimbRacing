@@ -53,6 +53,16 @@
   .upgrade-card .buy:disabled { background:#555; opacity:.5; cursor:default; }
   .upgrade-card .buy.maxed { background:#d35400; }
   #garage-coins { font-size:26px; color:#ffd700; font-weight:bold; margin-bottom:16px; }
+
+  /* Garage: vehicle selection + stat bars */
+  .garage-section-header { font-size:16px; font-weight:bold; color:#ffd700; margin:12px 0 6px; text-align:left; width:100%; max-width:380px; border-bottom:1px solid rgba(255,255,255,.15); padding-bottom:4px; }
+  .vehicle-card { border:2px solid rgba(255,255,255,.12); }
+  .vehicle-card.selected { border-color:#2ecc71; box-shadow:0 0 12px rgba(46,204,113,.25); }
+  .vehicle-stats { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+  .stat-row { display:flex; align-items:center; gap:8px; font-size:11px; }
+  .stat-label { width:60px; text-align:right; opacity:.7; }
+  .stat-bar { flex:1; height:8px; background:rgba(0,0,0,.4); border-radius:4px; overflow:hidden; }
+  .stat-fill { height:100%; border-radius:4px; transition:width .3s; }
 </style>
 </head>
 <body>
