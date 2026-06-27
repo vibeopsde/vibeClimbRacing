@@ -334,7 +334,6 @@ class Car {
     this.dead = false;
     this.flipTime = 0;
     this.airSpin = 0;          // accumulated rotation in air (for loop detection)
-    this.lastAngle = 0;       // previous frame angle (for delta tracking)
 
     // Apply upgrades from save
     const u = saveData.upgrades;
@@ -410,14 +409,13 @@ class Car {
     this.y += this.vy * dts;
     this.angle += this.angVel * dts;
 
-    // ── Loop detection: accumulate rotation while airborne ──
+    // ── Loop detection: accumulate angular velocity while airborne ──
+    // Use angVel*dts (true rotation) NOT angle-lastAngle (corrupted by slope alignment)
     if (!this.onGround) {
-      let delta = this.angle - this.lastAngle;
-      this.airSpin += delta;
+      this.airSpin += this.angVel * dts;
     } else {
       this.airSpin = 0;
     }
-    this.lastAngle = this.angle;
     this.loopCompleted = Math.abs(this.airSpin) >= Math.PI * 2;
 
     // ── Ground collision (direct snap, no bounce) ──
