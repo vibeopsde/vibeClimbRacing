@@ -229,36 +229,60 @@ function difficultyAt(x) {
   return 1 + (baseLevel + smooth) * 0.35;
 }
 
-// ── Seeded RNG (mulberry32) for per-run terrain variety ──
-let terrainSeed = 12345;
-function setTerrainSeed(s) { terrainSeed = s; }
-function seededRand() {
-  terrainSeed = (terrainSeed * 1664525 + 1013904223) | 0;
-  return ((terrainSeed >>> 0) % 100000) / 100000;
+// ── Terrain generation: random control points with Catmull-Rom interpolation ──
+// Replaces layered-sine noise. Control points are placed at random intervals
+// with random-walk heights that drift freely (not centered on 0), producing
+// organic terrain: real hills, valleys, plateaus — no visible "algorithm".
+let controlPoints = []; // {x, y} in world coords
+
+function resetTerrain() {
+  controlPoints = [{ x: 0, y: BASE_Y }];
 }
 
-// ── Noise (layered sines with per-run random phase offsets, scaled by difficulty) ──
-let noiseOffsets = [];
-function regenNoiseOffsets() {
-  noiseOffsets = [];
-  for (let i = 0; i < 5; i++) noiseOffsets.push(seededRand() * Math.PI * 2);
+// Generate control points ahead of the given x-coordinate
+function ensureControlPoints(upToX) {
+  while (controlPoints[controlPoints.length - 1].x < upToX) {
+    const last = controlPoints[controlPoints.length - 1];
+    // Random interval between control points (varied → breaks regularity)
+    const interval = 120 + Math.random() * 280; // 120-400 world units
+    const nextX = last.x + interval;
+    const diff = difficultyAt(nextX);
+    // Random walk: drift from last Y, can go anywhere (not mean-reverted to 0)
+    // Mild pull toward BASE_Y prevents runaway to extreme heights/depths
+    const drift = (Math.random() - 0.5) * 130 * diff;
+    const pull = (BASE_Y - last.y) * 0.10;
+    controlPoints.push({ x: nextX, y: last.y + drift + pull });
+  }
 }
 
-function noise(x) {
-  const d = difficultyAt(x);
-  return (
-    (Math.sin(x * 0.003 + noiseOffsets[0]) * 80 +
-     Math.sin(x * 0.007 + noiseOffsets[1]) * 40 +
-     Math.sin(x * 0.013 + noiseOffsets[2]) * 20 +
-     Math.sin(x * 0.021 + noiseOffsets[3]) * 10 +
-     Math.sin(x * 0.041 + noiseOffsets[4]) * 5) * d
+// Catmull-Rom spline interpolation between 4 control points
+function catmullRom(y0, y1, y2, y3, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  return 0.5 * (
+    (2 * y1) +
+    (-y0 + y2) * t +
+    (2 * y0 - 5 * y1 + 4 * y2 - y3) * t2 +
+    (-y0 + 3 * y1 - 3 * y2 + y3) * t3
   );
 }
 
-// Flat area at start so player doesn't instantly crash
 function terrainHeight(x) {
   if (x < 400) return BASE_Y;
-  return BASE_Y + noise(x);
+  ensureControlPoints(x);
+  // Binary search for the segment containing x
+  const pts = controlPoints;
+  let lo = 0, hi = pts.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (pts[mid].x <= x) lo = mid; else hi = mid;
+  }
+  const p0 = pts[lo], p1 = pts[hi];
+  const t = (x - p0.x) / (p1.x - p0.x);
+  // Neighbors for Catmull-Rom (clamp at edges)
+  const yPrev = pts[Math.max(0, lo - 1)].y;
+  const yNext = pts[Math.min(pts.length - 1, hi + 1)].y;
+  return catmullRom(yPrev, p0.y, p1.y, yNext, t);
 }
 
 // ── Terrain Manager ──
@@ -919,8 +943,7 @@ const TRACK_SAMPLE_INTERVAL = 50; // sample terrain every 50 world units (~5m)
 
 function initGame() {
   // New random terrain per run
-  setTerrainSeed(Math.floor(Math.random() * 1e9));
-  regenNoiseOffsets();
+  resetTerrain();
   terrain = new Terrain();
   car = new Car(100, BASE_Y - 100);
   coins = new CoinSystem();
