@@ -5,13 +5,14 @@
 // ════════════════════════════════════════
 
 // ── Tunable Constants ──
-const COIN_RADIUS = 1800;         // coin pickup radius² (dx²+dy²)
-const FUEL_RADIUS = 2500;         // fuel pickup radius²
+const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
+const FUEL_PICKUP_DIST_SQ = 2500;  // fuel pickup distance²
 const FUEL_REFILL = 35;           // fuel restored per can
 const COIN_GAP_MIN = 120;         // min gap between coins
 const COIN_GAP_MAX = 200;         // max gap between coins
-const FUEL_GAP_MIN = 3000;        // min gap between fuel cans (5x rarer — factor 0.2)
-const FUEL_GAP_MAX = 4000;        // max gap between fuel cans
+const FUEL_GAP_MIN = 3000;        // min gap between fuel cans (intentionally rare)
+const FUEL_GAP_MAX = 7000;        // max gap between fuel cans (intentionally rare)
+const BASE_Y = 280;               // ground level (world Y)
 const CAM_LERP_X = 0.08;           // camera follow lerp factor (X)
 const CAM_LERP_Y = 0.06;           // camera follow lerp factor (Y)
 const CAM_Y_MIN = -400;            // camera Y clamp (upper)
@@ -225,7 +226,7 @@ function difficultyAt(x) {
   // smoothstep: 0 at boundary start, 1 at boundary end, smooth in between
   const t = Math.max(0, Math.min(1, (frac * LEVEL_DIST - (LEVEL_DIST - TRANSITION)) / TRANSITION));
   const smooth = t * t * (3 - 2 * t);  // classic smoothstep
-  return 1 + (baseLevel + smooth * 0.35) * 0.35;
+  return 1 + (baseLevel + smooth) * 0.35;
 }
 
 // ── Noise (layered sines, scaled by difficulty) ──
@@ -735,7 +736,7 @@ class CoinSystem {
     // Spawn coins ahead
     while (this.nextSpawnX < camX + VIEW_AHEAD) {
       // Random gap between coins
-      const gap = COIN_GAP_MIN + Math.random() * COIN_GAP_MAX;
+      const gap = COIN_GAP_MIN + Math.random() * (COIN_GAP_MAX - COIN_GAP_MIN);
       this.nextSpawnX += gap;
       // Place coin slightly above terrain
       const gy = terrain.groundAt(this.nextSpawnX);
@@ -761,7 +762,7 @@ class CoinSystem {
       if (c.collected) continue;
       const dx = c.x - car.x;
       const dy = c.y - car.y;
-      if (dx * dx + dy * dy < COIN_RADIUS) {
+      if (dx * dx + dy * dy < COIN_PICKUP_DIST_SQ) {
         c.collected = true;
         this.collected++;
         sfx.coin();
@@ -796,7 +797,7 @@ class FuelSystem {
 
   update(camX, terrain) {
     while (this.nextSpawnX < camX + VIEW_AHEAD) {
-      const gap = FUEL_GAP_MIN + Math.random() * FUEL_GAP_MAX;
+      const gap = FUEL_GAP_MIN + Math.random() * (FUEL_GAP_MAX - FUEL_GAP_MIN);
       this.nextSpawnX += gap;
       const gy = terrain.groundAt(this.nextSpawnX);
       this.cans.push({ x: this.nextSpawnX, y: gy - 30, collected: false });
@@ -816,7 +817,7 @@ class FuelSystem {
       if (c.collected) continue;
       const dx = c.x - car.x;
       const dy = c.y - car.y;
-      if (dx * dx + dy * dy < FUEL_RADIUS) {
+      if (dx * dx + dy * dy < FUEL_PICKUP_DIST_SQ) {
         c.collected = true;
         car.fuel = Math.min(car.maxFuel, car.fuel + FUEL_REFILL);
         sfx.fuel();
@@ -877,12 +878,10 @@ class Clouds {
 }
 
 // ── Game State ──
-const BASE_Y = 280;
 let terrain, car, coins, fuels, clouds;
 let camX = 0, camY = 0;
 let distance = 0;
 let level = 1;
-let running = false;
 let lastTime = 0;
 let gameTime = 0;
 const input = { gas: false, brake: false };
@@ -898,7 +897,6 @@ function initGame() {
   distance = 0;
   level = 1;
   gameTime = 0;
-  running = true;
   lastTime = performance.now();
   requestAnimationFrame(loop);
 }
@@ -908,13 +906,10 @@ function loop(now) {
   const dt = Math.min((now - lastTime) / 1000, 0.033);
   lastTime = now;
 
-  if (running) {
+  if (!car.dead) {
     gameTime += dt;
     update(dt);
     render();
-  }
-
-  if (!car.dead) {
     requestAnimationFrame(loop);
   } else {
     gameOver();
@@ -1067,7 +1062,6 @@ function render() {
 }
 
 function gameOver() {
-  running = false;
   sfx.crash();
 
   // Persist run results
@@ -1211,6 +1205,11 @@ function renderGarage() {
     });
   });
 }
+
+// ── Mute toggle ──
+document.getElementById("mute-badge").addEventListener("click", () => {
+  document.getElementById("mute-badge").textContent = sfx.toggleMute() ? "🔇" : "🔊";
+});
 
 // ── Boot: show name input or start screen ──
 if (saveData.name) {
