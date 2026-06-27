@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.1";
+const VERSION = "v2606.2.2";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -1718,6 +1718,34 @@ function renderGarage() {
 // ── Mute toggle ──
 document.getElementById("mute-badge").addEventListener("click", () => {
   document.getElementById("mute-badge").textContent = sfx.toggleMute() ? "🔇" : "🔊";
+});
+
+// ── Fullscreen toggle ──
+// Android/Desktop: real Fullscreen API. iOS Safari: no API for elements,
+// but PWA meta tags allow "Add to Home Screen" → opens fullscreen automatically.
+// On iOS we detect standalone mode and hide the button (already fullscreen).
+const fsBadge = document.getElementById("fs-badge");
+// Hide button on iOS standalone (already fullscreen via PWA)
+if (window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches) {
+  fsBadge.style.display = "none";
+}
+fsBadge.addEventListener("click", () => {
+  const el = document.documentElement;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    if (el.requestFullscreen) el.requestFullscreen();
+    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    fsBadge.textContent = "⬜";
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    fsBadge.textContent = "⛶";
+  }
+});
+document.addEventListener("fullscreenchange", () => {
+  fsBadge.textContent = document.fullscreenElement ? "⬜" : "⛶";
+});
+document.addEventListener("webkitfullscreenchange", () => {
+  fsBadge.textContent = document.webkitFullscreenElement ? "⬜" : "⛶";
 });
 
 // ── Boot: show name input or start screen ──
