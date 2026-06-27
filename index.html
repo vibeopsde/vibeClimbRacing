@@ -36,6 +36,11 @@
   .overlay input { font-size:22px; padding:14px 20px; border-radius:12px; border:2px solid #2d6a9f; background:#222; color:#fff; text-align:center; margin-bottom:16px; width:300px; max-width:80vw; }
   .overlay input:focus { border-color:#34d058; outline:none; }
 
+  #profile-canvas { border-radius: 12px; margin: 12px 0 16px; box-shadow: 0 4px 16px rgba(0,0,0,.4); background:rgba(0,0,0,.35); }
+  #profile-stats { font-size:15px; line-height:1.8; opacity:.9; max-width:460px; }
+  #profile-stats .row { display:flex; justify-content:center; gap:20px; flex-wrap:wrap; }
+  #profile-stats .stat { white-space:nowrap; }
+
   /* Garage */
   .upgrade-card { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); border-radius:14px; padding:16px 24px; margin:8px 0; width:380px; max-width:90vw; display:flex; align-items:center; justify-content:space-between; }
   .upgrade-card .info { text-align:left; }
@@ -105,7 +110,8 @@
 <!-- Game Over -->
 <div id="gameover" class="overlay hide">
   <h1>💥 Game Over</h1>
-  <p id="gameover-stats"></p>
+  <canvas id="profile-canvas"></canvas>
+  <div id="profile-stats"></div>
   <button id="restart-btn">NOCHMAL</button>
   <button id="menu-btn" class="secondary">📋 MENÜ</button>
 </div>

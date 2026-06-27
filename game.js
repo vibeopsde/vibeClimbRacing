@@ -897,6 +897,12 @@ let lastTime = 0;
 let gameTime = 0;
 const input = { gas: false, brake: false };
 
+// ── Run tracking (for end-of-run elevation profile) ──
+let runTrack = [];     // sampled terrain heights: {x, y, level}
+let runPickups = [];    // coin/fuel pickup positions: {x, y, type}
+let runCrashX = 0;      // where the run ended
+const TRACK_SAMPLE_INTERVAL = 50; // sample terrain every 50 world units (~5m)
+
 function initGame() {
   terrain = new Terrain();
   car = new Car(100, BASE_Y - 100);
@@ -908,6 +914,9 @@ function initGame() {
   distance = 0;
   level = 1;
   gameTime = 0;
+  runTrack = [];
+  runPickups = [];
+  runCrashX = 0;
   lastTime = performance.now();
   requestAnimationFrame(loop);
 }
@@ -933,8 +942,25 @@ function update(dt) {
   sfx.updateEngine(car.vx, car.onGround);
   coins.update(camX, terrain, car.x);
   fuels.update(camX, terrain, car.x);
+
+  // ── Track terrain height for end-of-run profile ──
+  const trackX = car.x - (car.x % TRACK_SAMPLE_INTERVAL);
+  if (runTrack.length === 0 || trackX > runTrack[runTrack.length - 1].x) {
+    runTrack.push({ x: car.x, y: terrain.groundAt(car.x), level: level });
+  }
+
+  // Record pickups for the profile (before checkCollect removes them)
+  // We hook into the collection by checking what gets collected this frame
+  const preCoins = coins.collected;
+  const preFuel = car.fuel;
   coins.checkCollect(car);
   fuels.checkCollect(car);
+  if (coins.collected > preCoins) {
+    runPickups.push({ x: car.x, y: car.y, type: "coin" });
+  }
+  if (car.fuel > preFuel) {
+    runPickups.push({ x: car.x, y: car.y, type: "fuel" });
+  }
 
   // Camera follows car (smooth lerp, clamped to prevent runaway)
   const targetCamX = car.x - W * 0.35;
@@ -1074,6 +1100,7 @@ function render() {
 
 function gameOver() {
   sfx.crash();
+  runCrashX = car.x;
 
   // Persist run results
   saveData.wallet += coins.collected;
@@ -1082,9 +1109,172 @@ function gameOver() {
   if (coins.collected > saveData.best.coins) saveData.best.coins = coins.collected;
   saveSave();
 
-  const stats = document.getElementById("gameover-stats");
-  stats.innerHTML = `Distanz: <b>${distance} m</b> · Münzen: <b>${coins.collected}</b><br>Level: <b>${level}</b><br><br> Konto: 🪙 <b>${saveData.wallet}</b>`;
+  // ── Render elevation profile ──
+  drawRunProfile();
+
+  // ── Stats below profile ──
+  const coinPickups = runPickups.filter(p => p.type === "coin").length;
+  const fuelPickups = runPickups.filter(p => p.type === "fuel").length;
+  const statsEl = document.getElementById("profile-stats");
+  statsEl.innerHTML = `
+    <div class="row">
+      <span class="stat">📏 <b>${distance} m</b></span>
+      <span class="stat">⭐ Lvl <b>${level}</b></span>
+      <span class="stat">🪙 <b>${coins.collected}</b></span>
+    </div>
+    <div class="row">
+      <span class="stat">🛞 ${coinPickups}× Münzen</span>
+      <span class="stat">⛽ ${fuelPickups}× Tank</span>
+      <span class="stat">💰 Konto: <b>${saveData.wallet}</b></span>
+    </div>
+  `;
   document.getElementById("gameover").classList.remove("hide");
+}
+
+function drawRunProfile() {
+  const cv = document.getElementById("profile-canvas");
+  const dpr = window.devicePixelRatio || 1;
+  const cw = Math.min(440, window.innerWidth - 60);
+  const ch = 160;
+  cv.width = cw * dpr;
+  cv.height = ch * dpr;
+  cv.style.width = cw + "px";
+  cv.style.height = ch + "px";
+  const c = cv.getContext("2d");
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const padL = 36, padR = 12, padT = 14, padB = 22;
+  const plotW = cw - padL - padR;
+  const plotH = ch - padT - padB;
+
+  // World → screen mapping
+  const maxX = Math.max(runCrashX, 100);
+  const trackYs = runTrack.map(t => t.y);
+  const yMin = Math.min(...trackYs) - 30;
+  const yMax = Math.max(...trackYs) + 30;
+  const yRange = Math.max(yMax - yMin, 50);
+  const toX = (wx) => padL + (wx / maxX) * plotW;
+  const toY = (wy) => padT + (1 - (wy - yMin) / yRange) * plotH;
+
+  // ── Background ──
+  c.fillStyle = "rgba(0,0,0,0.25)";
+  c.fillRect(padL, padT, plotW, plotH);
+
+  // ── Grid lines (every 1000m) ──
+  c.strokeStyle = "rgba(255,255,255,0.08)";
+  c.lineWidth = 1;
+  c.fillStyle = "rgba(255,255,255,0.4)";
+  c.font = "9px sans-serif";
+  c.textAlign = "center";
+  for (let m = 0; m <= maxX / 10; m += 1000) {
+    const wx = m * 10;
+    const sx = toX(wx);
+    c.beginPath();
+    c.moveTo(sx, padT);
+    c.lineTo(sx, padT + plotH);
+    c.stroke();
+    if (m > 0 && m < maxX / 10) {
+      c.fillText(m + "m", sx, ch - 6);
+    }
+  }
+
+  // ── Level boundary markers (vertical dashed lines) ──
+  c.strokeStyle = "rgba(255,215,0,0.25)";
+  c.setLineDash([3, 3]);
+  for (let lvl = 1; lvl <= level; lvl++) {
+    const boundaryX = lvl * 10000;
+    if (boundaryX > 0 && boundaryX < maxX) {
+      const sx = toX(boundaryX);
+      c.beginPath();
+      c.moveTo(sx, padT);
+      c.lineTo(sx, padT + plotH);
+      c.stroke();
+    }
+  }
+  c.setLineDash([]);
+
+  // ── Terrain fill (gradient: brown earth → green grass top) ──
+  if (runTrack.length > 1) {
+    c.beginPath();
+    c.moveTo(toX(runTrack[0].x), padT + plotH);
+    for (const t of runTrack) {
+      c.lineTo(toX(t.x), toY(t.y));
+    }
+    c.lineTo(toX(runTrack[runTrack.length - 1].x), padT + plotH);
+    c.closePath();
+    const terrainGrad = c.createLinearGradient(0, padT, 0, padT + plotH);
+    terrainGrad.addColorStop(0, "rgba(76,175,80,0.35)");
+    terrainGrad.addColorStop(0.15, "rgba(139,111,71,0.3)");
+    terrainGrad.addColorStop(1, "rgba(40,30,20,0.5)");
+    c.fillStyle = terrainGrad;
+    c.fill();
+
+    // Terrain outline (grass-green stroke on top)
+    c.beginPath();
+    for (let i = 0; i < runTrack.length; i++) {
+      const t = runTrack[i];
+      const sx = toX(t.x), sy = toY(t.y);
+      if (i === 0) c.moveTo(sx, sy);
+      else c.lineTo(sx, sy);
+    }
+    c.strokeStyle = "#4CAF50";
+    c.lineWidth = 2;
+    c.lineJoin = "round";
+    c.stroke();
+  }
+
+  // ── Pickup markers ──
+  for (const p of runPickups) {
+    if (p.x > maxX) continue;
+    const sx = toX(p.x);
+    const sy = toY(p.y);
+    if (p.type === "coin") {
+      c.fillStyle = "#f1c40f";
+      c.beginPath();
+      c.arc(sx, sy, 2.5, 0, Math.PI * 2);
+      c.fill();
+    } else {
+      c.fillStyle = "#e67e22";
+      c.beginPath();
+      c.arc(sx, sy, 3.5, 0, Math.PI * 2);
+      c.fill();
+      c.strokeStyle = "#d35400";
+      c.lineWidth = 1;
+      c.stroke();
+    }
+  }
+
+  // ── Crash site marker (red X) ──
+  if (runCrashX > 0 && runCrashX <= maxX) {
+    const sx = toX(runCrashX);
+    const groundY = toY(terrain.groundAt(runCrashX));
+    c.strokeStyle = "#ff4444";
+    c.lineWidth = 2.5;
+    c.lineCap = "round";
+    c.beginPath();
+    c.moveTo(sx - 5, groundY - 8);
+    c.lineTo(sx + 5, groundY + 2);
+    c.moveTo(sx + 5, groundY - 8);
+    c.lineTo(sx - 5, groundY + 2);
+    c.stroke();
+    // Label
+    c.fillStyle = "#ff4444";
+    c.font = "bold 9px sans-serif";
+    c.textAlign = "center";
+    c.fillText("💥", sx, groundY - 12);
+  }
+
+  // ── Y-axis labels (height in m) ──
+  c.fillStyle = "rgba(255,255,255,0.35)";
+  c.font = "8px sans-serif";
+  c.textAlign = "right";
+  const yMid = (yMin + yMax) / 2;
+  const heightMid = ((BASE_Y - yMid) / 10).toFixed(0);
+  const heightTop = ((BASE_Y - yMax) / 10).toFixed(0);
+  const heightBot = ((BASE_Y - yMin) / 10).toFixed(0);
+  c.fillText(heightTop + "m", padL - 4, padT + 4);
+  c.fillText(heightMid + "m", padL - 4, padT + plotH / 2 + 3);
+  c.fillText(heightBot + "m", padL - 4, padT + plotH - 2);
 }
 
 // ── Input ──
