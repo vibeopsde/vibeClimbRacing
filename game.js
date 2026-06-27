@@ -16,7 +16,7 @@ const FUEL_GAP_MIN = 3000;        // min gap between fuel cans (intentionally ra
 const FUEL_GAP_MAX = 7000;        // max gap between fuel cans (intentionally rare)
 const BASE_Y = 280;               // ground level (world Y)
 const CAM_LERP_X = 0.08;           // camera follow lerp factor (X)
-const CAM_LERP_Y = 0.06;           // camera follow lerp factor (Y)
+const CAM_LERP_Y = 0.05;           // camera follow lerp factor (Y — smoother for vertical)
 const CAM_Y_MIN = -400;            // camera Y clamp (upper)
 const CAM_Y_MAX = 200;             // camera Y clamp (lower)
 const FLIP_DEATH_TIME = 0.3;       // seconds upside-down before death (near-instant, like original)
@@ -1016,14 +1016,11 @@ function update(dt) {
     runPickups.push({ x: car.x, y: car.y, type: "fuel" });
   }
 
-  // Camera follows car (smooth lerp, clamped to prevent runaway)
-  const targetCamX = car.x - W * 0.35;
-  const targetCamY = car.y - H * 0.55;
+  // Camera follows car — car centered on screen (both X and Y)
+  const targetCamX = car.x - W * 0.5;
+  const targetCamY = car.y - H * 0.5;
   camX += (targetCamX - camX) * CAM_LERP_X;
   camY += (targetCamY - camY) * CAM_LERP_Y;
-  // Hard clamp camera Y so it never flies off into the sky
-  if (camY < CAM_Y_MIN) camY = CAM_Y_MIN;
-  if (camY > CAM_Y_MAX) camY = CAM_Y_MAX;
 
   distance = Math.max(distance, Math.floor(car.x / 10));
 
