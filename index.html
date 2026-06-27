@@ -22,18 +22,32 @@
   #btn-brake { background:linear-gradient(135deg,#ff5e3a,#d73a49); }
   #btn-gas { background:linear-gradient(135deg,#34d058,#28a745); }
   .pedal svg { width:52px; height:52px; }
-  #gameover { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
-  #gameover.show { display:flex; }
-  #gameover h1 { font-size:52px; margin-bottom:12px; }
-  #gameover p { font-size:24px; margin-bottom:24px; opacity:.8; }
-  #gameover button { background:#28a745; border:none; color:#fff; font-size:22px; font-weight:bold; padding:16px 48px; border-radius:14px; cursor:pointer; }
-  #gameover button:active { transform:scale(.95); }
-  #start { position:fixed; inset:0; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
-  #start.hide { display:none; }
-  #start h1 { font-size:48px; margin-bottom:8px; }
-  #start p { font-size:20px; margin-bottom:24px; opacity:.8; max-width:400px; }
-  #start button { background:#28a745; border:none; color:#fff; font-size:22px; font-weight:bold; padding:16px 48px; border-radius:14px; cursor:pointer; }
-  #start button:active { transform:scale(.95); }
+
+  /* Overlay screens (shared) */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.78); display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
+  .overlay.hide { display:none; }
+  .overlay h1 { font-size:48px; margin-bottom:8px; }
+  .overlay h2 { font-size:28px; margin-bottom:16px; color:#ffd700; }
+  .overlay p { font-size:20px; margin-bottom:24px; opacity:.85; max-width:420px; line-height:1.4; }
+  .overlay button { background:#28a745; border:none; color:#fff; font-size:22px; font-weight:bold; padding:16px 48px; border-radius:14px; cursor:pointer; margin:6px; }
+  .overlay button:active { transform:scale(.95); }
+  .overlay button.secondary { background:#2d6a9f; }
+  .overlay button.danger { background:#d73a49; }
+  .overlay input { font-size:22px; padding:14px 20px; border-radius:12px; border:2px solid #2d6a9f; background:#222; color:#fff; text-align:center; margin-bottom:16px; width:300px; max-width:80vw; }
+  .overlay input:focus { border-color:#34d058; outline:none; }
+
+  /* Garage */
+  #garage { display:none; }
+  #garage.show { display:flex; }
+  .upgrade-card { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); border-radius:14px; padding:16px 24px; margin:8px 0; width:380px; max-width:90vw; display:flex; align-items:center; justify-content:space-between; }
+  .upgrade-card .info { text-align:left; }
+  .upgrade-card .info .name { font-size:20px; font-weight:bold; color:#fff; }
+  .upgrade-card .info .desc { font-size:14px; opacity:.7; }
+  .upgrade-card .info .bars { font-size:16px; color:#ffd700; margin-top:4px; }
+  .upgrade-card .buy { background:#28a745; border:none; color:#fff; font-size:16px; font-weight:bold; padding:10px 18px; border-radius:10px; cursor:pointer; white-space:nowrap; }
+  .upgrade-card .buy:disabled { background:#555; opacity:.5; cursor:default; }
+  .upgrade-card .buy.maxed { background:#d35400; }
+  #garage-coins { font-size:26px; color:#ffd700; font-weight:bold; margin-bottom:16px; }
 </style>
 </head>
 <body>
@@ -52,7 +66,6 @@
 <div id="controls">
   <button class="pedal" id="btn-brake" aria-label="Bremse/Rückwärts">
     <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <!-- Brake pedal icon -->
       <path d="M20 48 L20 20 Q20 14 26 14 L38 14 Q44 14 44 20 L44 48" />
       <path d="M20 48 L44 48" />
       <path d="M28 22 L28 40 M36 22 L36 40" stroke-width="2.5" opacity=".6"/>
@@ -60,7 +73,6 @@
   </button>
   <button class="pedal" id="btn-gas" aria-label="Gas">
     <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-      <!-- Gas pedal icon (accelerator) -->
       <path d="M20 48 L20 20 Q20 14 26 14 L38 14 Q44 14 44 20 L44 48" />
       <path d="M20 48 L44 48" />
       <path d="M26 24 L38 24 M26 30 L38 30 M26 36 L38 36" stroke-width="2.5" opacity=".6"/>
@@ -68,16 +80,36 @@
   </button>
 </div>
 
-<div id="start">
+<!-- Name Input -->
+<div id="nameinput" class="overlay">
   <h1>🏁 Vibe Climb Racing</h1>
-  <p>Endlose prozedurale Strecke.<br><b>Grün</b> = Gas · <b>Rot</b> = Bremse/Rückwärts.<br>Sammle Münzen, bleib auf den Rädern!</p>
-  <button id="start-btn">START</button>
+  <p>Wie heißt du, Fahrer?</p>
+  <input id="name-field" type="text" placeholder="Dein Name" maxlength="16" autofocus>
+  <button id="name-btn">LOS GEHT'S</button>
 </div>
 
-<div id="gameover">
+<!-- Start Screen -->
+<div id="start" class="overlay hide">
+  <h1>🏁 Vibe Climb Racing</h1>
+  <p>Willkommen, <b id="player-name">Fahrer</b>!<br>Kontostand: 🪙 <b id="wallet-coins">0</b><br>Bestleistung: <b id="best-dist">0</b> m · Lvl <b id="best-level">1</b></p>
+  <button id="garage-btn" class="secondary">🔧 GARAGE</button>
+  <button id="start-btn">🏁 START</button>
+</div>
+
+<!-- Garage -->
+<div id="garage" class="overlay">
+  <h1>🔧 Garage</h1>
+  <div id="garage-coins">🪙 0</div>
+  <div id="upgrade-list"></div>
+  <button id="garage-back" class="secondary" style="margin-top:16px;">⬅ ZURÜCK</button>
+</div>
+
+<!-- Game Over -->
+<div id="gameover" class="overlay hide">
   <h1>💥 Game Over</h1>
-  <p>Distanz: <b><span id="final-dist">0</span> m</b> · Münzen: <b><span id="final-coins">0</span></b><br>Level: <b><span id="final-level">1</span></b></p>
+  <p id="gameover-stats"></p>
   <button id="restart-btn">NOCHMAL</button>
+  <button id="menu-btn" class="secondary">📋 MENÜ</button>
 </div>
 
 <script src="game.js"></script>

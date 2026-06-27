@@ -116,6 +116,60 @@ class SoundSystem {
 }
 const sfx = new SoundSystem();
 
+// ════════════════════════════════════════
+// SAVE SYSTEM (localStorage)
+// ════════════════════════════════════════
+const SAVE_KEY = "vcr_save_v1";
+
+const DEFAULT_SAVE = {
+  name: null,
+  wallet: 0,          // persistent coins across runs
+  best: { distance: 0, level: 1, coins: 0 },
+  upgrades: { motor: 0, tires: 0, tank: 0 },
+};
+
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return { ...DEFAULT_SAVE };
+    const s = JSON.parse(raw);
+    return { ...DEFAULT_SAVE, ...s, best: { ...DEFAULT_SAVE.best, ...(s.best||{}) }, upgrades: { ...DEFAULT_SAVE.upgrades, ...(s.upgrades||{}) } };
+  } catch (e) { return { ...DEFAULT_SAVE }; }
+}
+
+function saveSave() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(saveData)); } catch (e) {}
+}
+
+let saveData = loadSave();
+
+// ════════════════════════════════════════
+// UPGRADES
+// ════════════════════════════════════════
+const UPGRADES = {
+  motor: {
+    name: "⚙️ Motor",
+    desc: "+10% Beschleunigung pro Level",
+    maxLevel: 5,
+    costs: [100, 250, 500, 1000, 2000],
+    apply: (lvl) => ({ engineFwd: 0.38 * (1 + 0.1 * lvl), engineBack: 0.45 * (1 + 0.1 * lvl) }),
+  },
+  tires: {
+    name: "🛞 Reifen",
+    desc: "+15% Bodenhaftung pro Level",
+    maxLevel: 5,
+    costs: [100, 250, 500, 1000, 2000],
+    apply: (lvl) => ({ grip: 0.992 + 0.001 * lvl, slopeAlign: 0.10 + 0.02 * lvl }),
+  },
+  tank: {
+    name: "⛽ Tank",
+    desc: "+20% Tankkapazität, weniger Verbrauch",
+    maxLevel: 5,
+    costs: [100, 250, 500, 1000, 2000],
+    apply: (lvl) => ({ maxFuel: 100 + 20 * lvl, drainRate: 0.05 * (1 - 0.08 * lvl), passiveDrain: 0.006 * (1 - 0.08 * lvl) }),
+  },
+};
+
 function resize() {
   DPR = window.devicePixelRatio || 1;
   W = window.innerWidth;
@@ -219,12 +273,23 @@ class Car {
     this.wheelRadius = 20;
     this.mass = 1.5;
     this.inertia = 4500;
-    this.fuel = 100;
     this.onGround = false;
     this.airborne = 0;
     this.dead = false;
-    this.enginePower = 0.42;
-    this.brakePower = 0.55;
+
+    // Apply upgrades from save
+    const u = saveData.upgrades;
+    const mUp = UPGRADES.motor.apply(u.motor);
+    const tUp = UPGRADES.tires.apply(u.tires);
+    const fUp = UPGRADES.tank.apply(u.tank);
+    this.engineFwd = mUp.engineFwd;
+    this.engineBack = mUp.engineBack;
+    this.grip = tUp.grip;
+    this.slopeAlign = tUp.slopeAlign;
+    this.maxFuel = fUp.maxFuel;
+    this.drainRate = fUp.drainRate;
+    this.passiveDrain = fUp.passiveDrain;
+    this.fuel = this.maxFuel;
   }
 
   update(dt, terrain, input) {
@@ -234,8 +299,8 @@ class Car {
 
     // ── Physics constants ──
     const GRAVITY = 0.40;
-    const ENGINE_FWD = 0.38;
-    const ENGINE_BACK = 0.45;
+    const ENGINE_FWD = this.engineFwd;
+    const ENGINE_BACK = this.engineBack;
     const AIR_DRAG = 0.995;
     const ANG_DAMP = 0.96;
     const MAX_VX = 14;
@@ -249,14 +314,14 @@ class Car {
 
     // Engine: on ground = full thrust along forward, in air = rotation only
     if (gas && this.fuel > 0) {
-      this.fuel -= 0.05 * dts;
+      this.fuel -= this.drainRate * dts;
       if (this.onGround) {
         this.vx += fwdX * ENGINE_FWD * dts;
         this.vy += fwdY * ENGINE_FWD * dts;
       }
     }
     if (brake && this.fuel > 0) {
-      this.fuel -= 0.025 * dts;
+      this.fuel -= this.drainRate * 0.5 * dts;
       if (this.onGround) {
         this.vx -= fwdX * ENGINE_BACK * dts;
         this.vy -= fwdY * ENGINE_BACK * dts;
@@ -264,7 +329,7 @@ class Car {
     }
 
     // Passive fuel drain
-    this.fuel -= 0.006 * dts;
+    this.fuel -= this.passiveDrain * dts;
 
     // Air drag
     this.vx *= AIR_DRAG;
@@ -309,11 +374,10 @@ class Car {
       this.y = avgGround - wheelOffset;
       this.onGround = true;
       // Instead of vy=0, inherit terrain-following vertical velocity.
-      // This lets the car launch off crests: uphill → vy<0 (upward), crest → vy≈0, past crest → flies.
       const slope = terrain.slopeAt(this.x);
       this.vy = slope * this.vx;
-      // Rolling friction
-      this.vx *= 0.992;
+      // Rolling friction (upgradeable)
+      this.vx *= this.grip;
     }
 
     // ── Slope alignment when grounded (skip if upside-down!) ──
@@ -332,7 +396,7 @@ class Car {
         // Normalize to [-PI, PI]
         while (diff > Math.PI) diff -= 2 * Math.PI;
         while (diff < -Math.PI) diff += 2 * Math.PI;
-        this.angle += diff * 0.10 * dts;
+        this.angle += diff * this.slopeAlign * dts;
       } else {
         // Upside down on ground — no slope correction, let flip timer run
         this.angVel *= 0.95;
@@ -648,7 +712,7 @@ function update(dt) {
   // Update HUD
   document.getElementById("dist").textContent = distance;
   document.getElementById("coins").textContent = coins.collected;
-  document.getElementById("fuel-bar-fill").style.width = car.fuel + "%";
+  document.getElementById("fuel-bar-fill").style.width = (car.fuel / car.maxFuel * 100) + "%";
   document.getElementById("level").textContent = level;
 
   // Check game over conditions
@@ -764,9 +828,16 @@ function render() {
 function gameOver() {
   running = false;
   sfx.crash();
-  document.getElementById("final-dist").textContent = distance;
-  document.getElementById("final-coins").textContent = coins.collected;
-  document.getElementById("final-level").textContent = level;
+
+  // Persist run results
+  saveData.wallet += coins.collected;
+  if (distance > saveData.best.distance) saveData.best.distance = distance;
+  if (level > saveData.best.level) saveData.best.level = level;
+  if (coins.collected > saveData.best.coins) saveData.best.coins = coins.collected;
+  saveSave();
+
+  const stats = document.getElementById("gameover-stats");
+  stats.innerHTML = `Distanz: <b>${distance} m</b> · Münzen: <b>${coins.collected}</b><br>Level: <b>${level}</b><br><br> Konto: 🪙 <b>${saveData.wallet}</b>`;
   document.getElementById("gameover").classList.add("show");
 }
 
@@ -800,16 +871,111 @@ function bindButtons() {
   press(brakeEl, "brake");
 }
 
-// ── Start / Restart ──
+// ── Start / Restart / Menu Flow ──
+
+function showStartScreen() {
+  document.getElementById("player-name").textContent = saveData.name || "Fahrer";
+  document.getElementById("wallet-coins").textContent = saveData.wallet;
+  document.getElementById("best-dist").textContent = saveData.best.distance;
+  document.getElementById("best-level").textContent = saveData.best.level;
+  document.getElementById("start").classList.remove("hide");
+}
+
+// Name input
+document.getElementById("name-btn").addEventListener("click", () => {
+  const name = document.getElementById("name-field").value.trim() || "Fahrer";
+  saveData.name = name;
+  saveSave();
+  sfx.init();
+  document.getElementById("nameinput").classList.add("hide");
+  showStartScreen();
+});
+
+document.getElementById("name-field").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("name-btn").click();
+});
+
+// Start game
 document.getElementById("start-btn").addEventListener("click", () => {
   document.getElementById("start").classList.add("hide");
   sfx.init();
   initGame();
 });
+
+// Restart
 document.getElementById("restart-btn").addEventListener("click", () => {
   document.getElementById("gameover").classList.remove("show");
-  sfx.init();
   initGame();
 });
+
+// Menu (back to start from game over)
+document.getElementById("menu-btn").addEventListener("click", () => {
+  document.getElementById("gameover").classList.remove("show");
+  showStartScreen();
+});
+
+// Garage
+document.getElementById("garage-btn").addEventListener("click", () => {
+  document.getElementById("start").classList.add("hide");
+  renderGarage();
+  document.getElementById("garage").classList.add("show");
+});
+
+document.getElementById("garage-back").addEventListener("click", () => {
+  document.getElementById("garage").classList.remove("show");
+  showStartScreen();
+});
+
+function renderGarage() {
+  document.getElementById("garage-coins").textContent = `🪙 ${saveData.wallet}`;
+  const list = document.getElementById("upgrade-list");
+  list.innerHTML = "";
+
+  for (const [key, up] of Object.entries(UPGRADES)) {
+    const lvl = saveData.upgrades[key];
+    const maxed = lvl >= up.maxLevel;
+    const cost = maxed ? 0 : up.costs[lvl];
+    const canAfford = saveData.wallet >= cost && !maxed;
+
+    const bars = "▮".repeat(lvl) + "▯".repeat(up.maxLevel - lvl);
+
+    const card = document.createElement("div");
+    card.className = "upgrade-card";
+    card.innerHTML = `
+      <div class="info">
+        <div class="name">${up.name}</div>
+        <div class="desc">${up.desc}</div>
+        <div class="bars">${bars}</div>
+      </div>
+      <button class="buy ${maxed ? "maxed" : ""}" ${!canAfford && !maxed ? "disabled" : ""} data-upgrade="${key}">
+        ${maxed ? "MAX" : `🪙 ${cost}`}
+      </button>
+    `;
+    list.appendChild(card);
+  }
+
+  // Bind buy buttons
+  list.querySelectorAll(".buy[data-upgrade]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.upgrade;
+      const up = UPGRADES[key];
+      const lvl = saveData.upgrades[key];
+      if (lvl >= up.maxLevel) return;
+      const cost = up.costs[lvl];
+      if (saveData.wallet < cost) return;
+      saveData.wallet -= cost;
+      saveData.upgrades[key]++;
+      saveSave();
+      sfx.coin();
+      renderGarage();
+    });
+  });
+}
+
+// ── Boot: show name input or start screen ──
+if (saveData.name) {
+  document.getElementById("nameinput").classList.add("hide");
+  showStartScreen();
+}
 
 bindButtons();
