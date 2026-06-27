@@ -19,15 +19,17 @@ class SoundSystem {
 
   // Must be called from a user gesture (click/touch) to satisfy autoplay policies
   init() {
-    if (this.ctx) return;
-    try {
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      this._startEngine();
-    } catch (e) { /* no audio support */ }
+    if (!this.ctx) {
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+    }
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    this._startEngine();
   }
 
   _startEngine() {
     if (!this.ctx) return;
+    // Stop previous engine if any
+    if (this.engineOsc) { try { this.engineOsc.stop(); } catch (e) {} }
     this.engineOsc = this.ctx.createOscillator();
     this.engineGain = this.ctx.createGain();
     this.engineOsc.type = "sawtooth";
@@ -87,7 +89,18 @@ class SoundSystem {
   coin() { this._tone(880, 0.08, "sine", 0.15); this._tone(1320, 0.12, "sine", 0.15, 0.06); }
   fuel() { this._tone(440, 0.1, "triangle", 0.18); this._tone(660, 0.15, "triangle", 0.15, 0.08); }
   levelUp() { this._tone(523, 0.1, "square", 0.12); this._tone(659, 0.1, "square", 0.12, 0.1); this._tone(784, 0.2, "square", 0.12, 0.2); }
-  crash() { this._noise(0.4, 0.4); this._tone(80, 0.5, "sawtooth", 0.25, 0.05); }
+  crash() {
+    // Kill engine sound first
+    if (this.engineGain && this.ctx) {
+      this.engineGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.02);
+    }
+    // Crash sound: dramatic descending tones + noise
+    this._noise(0.5, 0.4);
+    this._tone(200, 0.15, "sawtooth", 0.25, 0);
+    this._tone(150, 0.15, "sawtooth", 0.25, 0.12);
+    this._tone(100, 0.15, "sawtooth", 0.25, 0.24);
+    this._tone(60, 0.4, "sawtooth", 0.3, 0.36);
+  }
 
   toggleMute() {
     this.muted = !this.muted;
