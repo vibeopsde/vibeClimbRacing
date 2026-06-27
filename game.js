@@ -32,10 +32,15 @@ class SoundSystem {
     if (this.engineOsc) { try { this.engineOsc.stop(); } catch (e) {} }
     this.engineOsc = this.ctx.createOscillator();
     this.engineGain = this.ctx.createGain();
-    this.engineOsc.type = "sawtooth";
-    this.engineOsc.frequency.value = 60;
+    this.engineFilter = this.ctx.createBiquadFilter();
+    this.engineFilter.type = "lowpass";
+    this.engineFilter.frequency.value = 400;
+    this.engineFilter.Q.value = 2;
+    this.engineOsc.type = "square";
+    this.engineOsc.frequency.value = 35;
     this.engineGain.gain.value = 0;
-    this.engineOsc.connect(this.engineGain);
+    this.engineOsc.connect(this.engineFilter);
+    this.engineFilter.connect(this.engineGain);
     this.engineGain.connect(this.ctx.destination);
     this.engineOsc.start();
   }
@@ -44,9 +49,10 @@ class SoundSystem {
   updateEngine(vx, onGround) {
     if (!this.engineOsc || !this.engineGain || this.muted) return;
     const speed = Math.abs(vx);
-    const freq = 50 + speed * 15; // 50Hz idle → ~260Hz at max speed
-    const vol = onGround ? Math.min(0.12, 0.02 + speed * 0.008) : 0.01;
+    const freq = 30 + speed * 8; // 30Hz idle → ~140Hz at max speed
+    const vol = onGround ? Math.min(0.15, 0.03 + speed * 0.009) : 0.015;
     this.engineOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.05);
+    this.engineFilter.frequency.setTargetAtTime(300 + speed * 30, this.ctx.currentTime, 0.08);
     this.engineGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.08);
   }
 
