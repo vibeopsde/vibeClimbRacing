@@ -8,8 +8,8 @@
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
 const FUEL_PICKUP_DIST_SQ = 2500;  // fuel pickup distance²
 const FUEL_REFILL = 35;           // fuel restored per can
-const COIN_GAP_MIN = 120;         // min gap between coins
-const COIN_GAP_MAX = 200;         // max gap between coins
+const COIN_GAP_MIN = 600;         // min gap between coins (5x rarer — factor 0.2)
+const COIN_GAP_MAX = 1000;        // max gap between coins (5x rarer — factor 0.2)
 const FUEL_GAP_MIN = 3000;        // min gap between fuel cans (intentionally rare)
 const FUEL_GAP_MAX = 7000;        // max gap between fuel cans (intentionally rare)
 const BASE_Y = 280;               // ground level (world Y)
