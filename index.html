@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Vibe Climb Racing</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#87CEEB; font-family:'Segoe UI',sans-serif; }
+  #game { display:block; touch-action:none; }
+  #hud { position:fixed; top:0; left:0; right:0; pointer-events:none; z-index:10; }
+  .badge { display:inline-flex; align-items:center; gap:6px; background:rgba(0,0,0,.55); color:#fff; border-radius:12px; padding:8px 16px; margin:10px; font-size:18px; font-weight:bold; backdrop-filter:blur(4px); }
+  #fuel-badge .icon { width:18px; height:14px; background:#ff5e3a; border-radius:3px; display:inline-block; }
+  #fuel-bar-bg { width:90px; height:14px; background:#333; border-radius:7px; overflow:hidden; }
+  #fuel-bar-fill { height:100%; background:#ff5e3a; transition:width .2s; }
+  #controls { position:fixed; bottom:0; width:100%; display:flex; justify-content:space-between; pointer-events:none; z-index:10; }
+  .btn { pointer-events:auto; width:110px; height:90px; margin:0 24px 30px; border:none; border-radius:18px; font-size:36px; font-weight:bold; color:#fff; backdrop-filter:blur(4px); user-select:none; cursor:pointer; touch-action:none; transition:transform .08s; }
+  .btn:active { transform:scale(.92); }
+  #btn-gas { background:linear-gradient(135deg,#34d058,#28a745); margin-right:auto; margin-left:24px; }
+  #btn-brake { background:linear-gradient(135deg,#ff5e3a,#d73a49); }
+  #gameover { position:fixed; inset:0; background:rgba(0,0,0,.72); display:none; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
+  #gameover.show { display:flex; }
+  #gameover h1 { font-size:52px; margin-bottom:12px; }
+  #gameover p { font-size:24px; margin-bottom:24px; opacity:.8; }
+  #gameover button { background:#28a745; border:none; color:#fff; font-size:22px; font-weight:bold; padding:16px 48px; border-radius:14px; cursor:pointer; }
+  #gameover button:active { transform:scale(.95); }
+  #start { position:fixed; inset:0; background:rgba(0,0,0,.72); display:flex; align-items:center; justify-content:center; flex-direction:column; z-index:20; color:#fff; text-align:center; }
+  #start.hide { display:none; }
+  #start h1 { font-size:48px; margin-bottom:8px; }
+  #start p { font-size:20px; margin-bottom:24px; opacity:.8; max-width:400px; }
+  #start button { background:#28a745; border:none; color:#fff; font-size:22px; font-weight:bold; padding:16px 48px; border-radius:14px; cursor:pointer; }
+  #start button:active { transform:scale(.95); }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <span class="badge">🚗 <span id="dist">0</span> m</span>
+  <span class="badge">🪙 <span id="coins">0</span></span>
+  <span class="badge" id="fuel-badge"><span id="fuel-bar-bg"><span id="fuel-bar-fill" style="width:100%"></span></span></span>
+</div>
+
+<div id="controls">
+  <button class="btn" id="btn-brake">◀</button>
+  <button class="btn" id="btn-gas">▶</button>
+</div>
+
+<div id="start">
+  <h1>🏁 Vibe Climb Racing</h1>
+  <p>Endlose prozedurale Strecke.<br><b>Grün</b> = Gas · <b>Rot</b> = Bremse/Rückwärts.<br>Sammle Münzen, bleib auf den Rädern!</p>
+  <button id="start-btn">START</button>
+</div>
+
+<div id="gameover">
+  <h1>💥 Game Over</h1>
+  <p>Distanz: <b><span id="final-dist">0</span> m</b> · Münzen: <b><span id="final-coins">0</span></b></p>
+  <button id="restart-btn">NOCHMAL</button>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
