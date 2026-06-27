@@ -300,11 +300,14 @@ class Car {
 
     this.onGround = false;
 
-    // Only snap to ground when falling (vy >= 0) — lets car launch off crests
-    if (carBottom >= avgGround && this.vy >= 0) {
+    // Snap to ground when at/below terrain (no vy>=0 gate — terrain-following vy handles launches)
+    if (carBottom >= avgGround) {
       this.y = avgGround - wheelOffset;
-      this.vy = 0;
       this.onGround = true;
+      // Instead of vy=0, inherit terrain-following vertical velocity.
+      // This lets the car launch off crests: uphill → vy<0 (upward), crest → vy≈0, past crest → flies.
+      const slope = terrain.slopeAt(this.x);
+      this.vy = slope * this.vx;
       // Rolling friction
       this.vx *= 0.992;
     }
