@@ -247,16 +247,20 @@ class Car {
     // Gravity (always down in screen)
     this.vy += GRAVITY * dts;
 
-    // Engine: accelerate along forward direction
+    // Engine: on ground = full thrust along forward, in air = rotation only
     if (gas && this.fuel > 0) {
-      this.vx += fwdX * ENGINE_FWD * dts;
-      this.vy += fwdY * ENGINE_FWD * dts;
       this.fuel -= 0.05 * dts;
+      if (this.onGround) {
+        this.vx += fwdX * ENGINE_FWD * dts;
+        this.vy += fwdY * ENGINE_FWD * dts;
+      }
     }
     if (brake && this.fuel > 0) {
-      this.vx -= fwdX * ENGINE_BACK * dts;
-      this.vy -= fwdY * ENGINE_BACK * dts;
       this.fuel -= 0.025 * dts;
+      if (this.onGround) {
+        this.vx -= fwdX * ENGINE_BACK * dts;
+        this.vy -= fwdY * ENGINE_BACK * dts;
+      }
     }
 
     // Passive fuel drain
@@ -273,8 +277,8 @@ class Car {
     // Angular damping + air control
     this.angVel *= ANG_DAMP;
     if (!this.onGround) {
-      if (gas) this.angVel -= 0.003 * dts;  // rotate backward (wheelie)
-      if (brake) this.angVel += 0.003 * dts; // rotate forward (endo)
+      if (gas) this.angVel -= 0.008 * dts;  // rotate backward (wheelie)
+      if (brake) this.angVel += 0.008 * dts; // rotate forward (endo)
     }
 
     // Integrate
