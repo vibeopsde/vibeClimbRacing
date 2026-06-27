@@ -171,6 +171,12 @@ class Car {
     this.y += this.vy * dts;
     this.angle += this.angVel * dts;
 
+    // Left boundary — can't drive behind start (prevents terrain disappearing)
+    if (this.x < 0) {
+      this.x = 0;
+      if (this.vx < 0) this.vx = 0;
+    }
+
     // ── Ground collision (direct snap, no bounce) ──
     // Wheel positions for slope detection
     const halfWB = this.wheelBase / 2;
