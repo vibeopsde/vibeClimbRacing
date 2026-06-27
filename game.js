@@ -67,11 +67,8 @@ class Terrain {
       this.points.push({ x: this.lastX, y: terrainHeight(this.lastX) });
       this.lastX += SEGMENT_WIDTH;
     }
-    // Trim behind
-    const minNeeded = camX - VIEW_BEHIND;
-    while (this.points.length > 200 && this.points[1].x < minNeeded) {
-      this.points.shift();
-    }
+    // NOTE: We do NOT trim behind — keeping all points allows driving backwards.
+    // Memory is negligible: ~1700 points per 10km (each point = 2 numbers).
   }
 
   // Ground height at world x (binary search in points)
@@ -170,12 +167,6 @@ class Car {
     this.x += this.vx * dts;
     this.y += this.vy * dts;
     this.angle += this.angVel * dts;
-
-    // Left boundary — can't drive behind start (prevents terrain disappearing)
-    if (this.x < 0) {
-      this.x = 0;
-      if (this.vx < 0) this.vx = 0;
-    }
 
     // ── Ground collision (direct snap, no bounce) ──
     // Wheel positions for slope detection
