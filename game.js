@@ -838,7 +838,7 @@ function gameOver() {
 
   const stats = document.getElementById("gameover-stats");
   stats.innerHTML = `Distanz: <b>${distance} m</b> · Münzen: <b>${coins.collected}</b><br>Level: <b>${level}</b><br><br> Konto: 🪙 <b>${saveData.wallet}</b>`;
-  document.getElementById("gameover").classList.add("show");
+  document.getElementById("gameover").classList.remove("hide");
 }
 
 // ── Input ──
@@ -904,13 +904,13 @@ document.getElementById("start-btn").addEventListener("click", () => {
 
 // Restart
 document.getElementById("restart-btn").addEventListener("click", () => {
-  document.getElementById("gameover").classList.remove("show");
+  document.getElementById("gameover").classList.add("hide");
   initGame();
 });
 
 // Menu (back to start from game over)
 document.getElementById("menu-btn").addEventListener("click", () => {
-  document.getElementById("gameover").classList.remove("show");
+  document.getElementById("gameover").classList.add("hide");
   showStartScreen();
 });
 
@@ -918,11 +918,11 @@ document.getElementById("menu-btn").addEventListener("click", () => {
 document.getElementById("garage-btn").addEventListener("click", () => {
   document.getElementById("start").classList.add("hide");
   renderGarage();
-  document.getElementById("garage").classList.add("show");
+  document.getElementById("garage").classList.remove("hide");
 });
 
 document.getElementById("garage-back").addEventListener("click", () => {
-  document.getElementById("garage").classList.remove("show");
+  document.getElementById("garage").classList.add("hide");
   showStartScreen();
 });
 
