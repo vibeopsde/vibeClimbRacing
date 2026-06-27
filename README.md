@@ -2,8 +2,6 @@
 
 Endless procedural hill climb game — vanilla JS, no frameworks, no dependencies.
 
-**🎮 Play: [https://vcr.vibeops.de](https://vcr.vibeops.de)**
-
 ## What is this?
 
 A browser-based hill climb racer where the terrain generates **procedurally during play** — no two runs are the same. The track builds itself ahead of you using layered sine noise and trims behind you as you drive. Pure vanilla JavaScript + Canvas, zero dependencies.
@@ -36,7 +34,6 @@ A browser-based hill climb racer where the terrain generates **procedurally duri
 | Physics | Custom 2D (gravity, collision, angular dynamics) |
 | Terrain | Layered sine noise, binary-search lookup |
 | Language | Vanilla JS (ES6), no transpiler |
-| Serving | Caddy (static file server via symlink) |
 
 ## File Structure
 
@@ -47,24 +44,37 @@ vcr/
 └── README.md     # This file
 ```
 
+## Quick Start
+
+Just open `index.html` in a browser. That's it — no build step, no dependencies.
+
+Or serve locally:
+
+```bash
+python3 -m http.server 8099
+# open http://localhost:8099
+```
+
 ## Deployment
 
-The repo lives at `/root/vcr` and is symlinked to `/var/www/vcr`, served by Caddy:
+Since it's static files, any web server works. Example with Caddy:
 
 ```
-vcr.vibeops.de {
-    root * /var/www/vcr
+vcr.example.com {
+    root * /path/to/vcr
     file_server
 }
 ```
 
-To deploy changes:
+Or with nginx:
 
-```bash
-cd /root/vcr
-git add -A
-git commit -m "your change"
-# Caddy serves via symlink — live immediately
+```nginx
+server {
+    listen 80;
+    server_name vcr.example.com;
+    root /path/to/vcr;
+    location / { try_files $uri $uri/ =404; }
+}
 ```
 
 ## Physics Tuning
