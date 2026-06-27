@@ -336,6 +336,7 @@ class Car {
     this.angVel = 0;
     this.wheelBase = 70;
     this.wheelRadius = 20;
+    this.wheelOffset = this.wheelRadius; // wheels sit ON ground, not in it
     this.mass = 1.5;
     this.inertia = 4500;
     this.onGround = false;
@@ -429,7 +430,7 @@ class Car {
     // ── Ground collision (direct snap, no bounce) ──
     // Wheel positions for slope detection
     const halfWB = this.wheelBase / 2;
-    const wheelOffset = 20;
+    const wheelOffset = this.wheelOffset;
     const wlX = this.x - fwdX * halfWB - fwdY * wheelOffset;
     const wrX = this.x + fwdX * halfWB - fwdY * wheelOffset;
 
@@ -497,46 +498,21 @@ class Car {
     const sx = this.x - camX;
     const sy = this.y - camY;
 
+    // ── Shadow under car ──
     ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(this.angle);
-
-    // Chassis body
-    ctx.fillStyle = "#e74c3c";
-    ctx.strokeStyle = "#c0392b";
-    ctx.lineWidth = 2;
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
     ctx.beginPath();
-    ctx.roundRect(-38, -22, 76, 28, 6);
+    ctx.ellipse(sx, sy + this.wheelOffset + 2, 42, 6, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.stroke();
-
-    // Cabin
-    ctx.fillStyle = "#2c3e50";
-    ctx.beginPath();
-    ctx.roundRect(-14, -38, 34, 18, 4);
-    ctx.fill();
-
-    // Window
-    ctx.fillStyle = "#5dade2";
-    ctx.beginPath();
-    ctx.roundRect(-10, -35, 26, 12, 3);
-    ctx.fill();
-
-    // Driver head
-    ctx.fillStyle = "#f9e79f";
-    ctx.beginPath();
-    ctx.arc(8, -26, 7, 0, Math.PI * 2);
-    ctx.fill();
-
     ctx.restore();
 
-    // Wheels (drawn separately in world coords for clarity)
+    // ── Wheels (drawn first, behind body) ──
     const fwdX = Math.cos(this.angle);
     const fwdY = Math.sin(this.angle);
     const perpX = -fwdY;
     const perpY = fwdX;
     const halfWB = this.wheelBase / 2;
-    const wy = 20;
+    const wy = this.wheelOffset;
 
     for (const sign of [-1, 1]) {
       const wx = this.x + fwdX * (halfWB * sign) + perpX * wy;
@@ -544,32 +520,179 @@ class Car {
       ctx.save();
       ctx.translate(wx - camX, wyy - camY);
       ctx.rotate(this.angle);
-      // Tire
-      ctx.fillStyle = "#2c2c2c";
-      ctx.strokeStyle = "#555";
+
+      // Tire (dark rubber with slight texture)
+      ctx.fillStyle = "#1a1a1a";
+      ctx.strokeStyle = "#333";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(0, 0, this.wheelRadius, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      // Hubcap
-      ctx.fillStyle = "#888";
-      ctx.beginPath();
-      ctx.arc(0, 0, 7, 0, Math.PI * 2);
-      ctx.fill();
-      // Spokes (rotate with speed)
-      const spin = (this.x / this.wheelRadius) * sign;
-      ctx.strokeStyle = "#666";
-      ctx.lineWidth = 2;
-      for (let i = 0; i < 4; i++) {
-        const a = spin + (i * Math.PI) / 2;
+
+      // Tread marks around tire
+      ctx.strokeStyle = "#2a2a2a";
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4;
+        const r = this.wheelRadius - 2;
+        const r2 = this.wheelRadius - 6;
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * 17, Math.sin(a) * 17);
+        ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
         ctx.stroke();
       }
+
+      // Hubcap (silver)
+      ctx.fillStyle = "#bdc3c7";
+      ctx.beginPath();
+      ctx.arc(0, 0, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#95a5a6";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Spokes (rotate with speed)
+      const spin = (this.x / this.wheelRadius) * sign;
+      ctx.strokeStyle = "#7f8c8d";
+      ctx.lineWidth = 2.5;
+      for (let i = 0; i < 5; i++) {
+        const a = spin + (i * Math.PI * 2) / 5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
+        ctx.stroke();
+      }
+
+      // Center cap
+      ctx.fillStyle = "#ecf0f1";
+      ctx.beginPath();
+      ctx.arc(0, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.restore();
     }
+
+    // ── Car body (drawn after wheels) ──
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(this.angle);
+
+    // Suspension arms (connecting wheels to body)
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    for (const sign of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sign * 25, 0);
+      ctx.lineTo(sign * 35, this.wheelOffset - 4);
+      ctx.stroke();
+    }
+
+    // Main body — rounded red chassis with gradient
+    const bodyGrad = ctx.createLinearGradient(0, -20, 0, 10);
+    bodyGrad.addColorStop(0, "#e74c3c");
+    bodyGrad.addColorStop(1, "#c0392b");
+    ctx.fillStyle = bodyGrad;
+    ctx.strokeStyle = "#922b21";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-40, -20, 80, 24, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    // Lower body skid plate (darker)
+    ctx.fillStyle = "#7f8c8d";
+    ctx.beginPath();
+    ctx.roundRect(-38, 0, 76, 6, 3);
+    ctx.fill();
+
+    // Hood (front, sloped)
+    ctx.fillStyle = "#c0392b";
+    ctx.beginPath();
+    ctx.moveTo(20, -20);
+    ctx.lineTo(40, -20);
+    ctx.lineTo(42, -28);
+    ctx.lineTo(22, -28);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cabin (darker, rounded)
+    const cabinGrad = ctx.createLinearGradient(0, -40, 0, -20);
+    cabinGrad.addColorStop(0, "#34495e");
+    cabinGrad.addColorStop(1, "#2c3e50");
+    ctx.fillStyle = cabinGrad;
+    ctx.beginPath();
+    ctx.roundRect(-18, -38, 38, 20, 6);
+    ctx.fill();
+
+    // Windshield (tinted blue)
+    const winGrad = ctx.createLinearGradient(0, -36, 0, -22);
+    winGrad.addColorStop(0, "#85c1e9");
+    winGrad.addColorStop(1, "#5dade2");
+    ctx.fillStyle = winGrad;
+    ctx.beginPath();
+    ctx.roundRect(-14, -35, 16, 14, 3);
+    ctx.fill();
+
+    // Side window
+    ctx.fillStyle = "#aed6f1";
+    ctx.beginPath();
+    ctx.roundRect(4, -35, 14, 14, 3);
+    ctx.fill();
+
+    // Roll bar (behind cabin)
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-18, -38);
+    ctx.lineTo(-18, -20);
+    ctx.stroke();
+
+    // Driver head with helmet
+    ctx.fillStyle = "#f9e79f";
+    ctx.beginPath();
+    ctx.arc(-2, -28, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Helmet
+    ctx.fillStyle = "#e74c3c";
+    ctx.beginPath();
+    ctx.arc(-2, -30, 7, Math.PI, 0);
+    ctx.fill();
+    // Helmet visor
+    ctx.fillStyle = "#2c3e50";
+    ctx.fillRect(-2, -31, 6, 3);
+
+    // Headlight (front)
+    ctx.fillStyle = "#fffacd";
+    ctx.beginPath();
+    ctx.arc(38, -12, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#f39c12";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Taillight (back)
+    ctx.fillStyle = "#e74c3c";
+    ctx.beginPath();
+    ctx.arc(-38, -12, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#c0392b";
+    ctx.stroke();
+
+    // Exhaust pipe (back)
+    ctx.fillStyle = "#7f8c8d";
+    ctx.fillRect(-44, -8, 6, 4);
+
+    // Side detail line
+    ctx.strokeStyle = "#a93226";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-35, -8);
+    ctx.lineTo(35, -8);
+    ctx.stroke();
+
+    ctx.restore();
   }
 }
 
