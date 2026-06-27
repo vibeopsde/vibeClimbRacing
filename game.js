@@ -16,7 +16,7 @@ const CAM_LERP_X = 0.08;           // camera follow lerp factor (X)
 const CAM_LERP_Y = 0.06;           // camera follow lerp factor (Y)
 const CAM_Y_MIN = -400;            // camera Y clamp (upper)
 const CAM_Y_MAX = 200;             // camera Y clamp (lower)
-const FLIP_DEATH_TIME = 2.0;       // seconds upside-down before death
+const FLIP_DEATH_TIME = 0.3;       // seconds upside-down before death (near-instant, like original)
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
