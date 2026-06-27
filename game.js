@@ -201,19 +201,27 @@ class Car {
       this.vx *= 0.992;
     }
 
-    // ── Slope alignment when grounded ──
+    // ── Slope alignment when grounded (skip if upside-down!) ──
     if (this.onGround) {
       this.airborne = 0;
-      this.angVel *= 0.7;
-      // Target angle = terrain slope angle
-      const slope = terrain.slopeAt(this.x);
-      const targetAngle = Math.atan2(slope, 1);
-      // Smoothly steer car angle toward slope
-      let diff = targetAngle - this.angle;
-      // Normalize to [-PI, PI]
-      while (diff > Math.PI) diff -= 2 * Math.PI;
-      while (diff < -Math.PI) diff += 2 * Math.PI;
-      this.angle += diff * 0.15 * dts;
+      // Check if car is upside-down (roof on ground)
+      const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+      const upsideDown = normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4;
+      if (!upsideDown) {
+        this.angVel *= 0.7;
+        // Target angle = terrain slope angle
+        const slope = terrain.slopeAt(this.x);
+        const targetAngle = Math.atan2(slope, 1);
+        // Smoothly steer car angle toward slope
+        let diff = targetAngle - this.angle;
+        // Normalize to [-PI, PI]
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        this.angle += diff * 0.15 * dts;
+      } else {
+        // Upside down on ground — no slope correction, let flip timer run
+        this.angVel *= 0.95;
+      }
     } else {
       this.airborne += dts;
     }
