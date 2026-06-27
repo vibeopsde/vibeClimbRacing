@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.7";
+const VERSION = "v2606.2.8";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -392,7 +392,7 @@ let controlPoints = []; // {x, y} in world coords
 
 function resetTerrain() {
   // Start with a few random control points so terrain is interesting from the get-go
-  // (flat zone x<400 still enforced by terrainHeight, so first point can be wild)
+  // (flat zone x<200 with smooth blend to 500, so first point can be wild)
   controlPoints = [{ x: 0, y: BASE_Y }];
   // Pre-generate a few wild points so the terrain doesn't slowly ramp up
   let lastY = BASE_Y;
@@ -435,21 +435,26 @@ function catmullRom(y0, y1, y2, y3, t) {
 }
 
 function terrainHeight(x) {
-  if (x < 400) return BASE_Y;
+  if (x < 200) return BASE_Y;
   ensureControlPoints(x);
-  // Binary search for the segment containing x
-  const pts = controlPoints;
-  let lo = 0, hi = pts.length - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (pts[mid].x <= x) lo = mid; else hi = mid;
-  }
-  const p0 = pts[lo], p1 = pts[hi];
-  const t = (x - p0.x) / (p1.x - p0.x);
-  // Neighbors for Catmull-Rom (clamp at edges)
-  const yPrev = pts[Math.max(0, lo - 1)].y;
-  const yNext = pts[Math.min(pts.length - 1, hi + 1)].y;
-  return catmullRom(yPrev, p0.y, p1.y, yNext, t);
+  // Smooth blend from flat (x=200) to full terrain (x=500) — prevents hard step
+  const rawHeight = (() => {
+    const pts = controlPoints;
+    let lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (pts[mid].x <= x) lo = mid; else hi = mid;
+    }
+    const p0 = pts[lo], p1 = pts[hi];
+    const t = (x - p0.x) / (p1.x - p0.x);
+    const yPrev = pts[Math.max(0, lo - 1)].y;
+    const yNext = pts[Math.min(pts.length - 1, hi + 1)].y;
+    return catmullRom(yPrev, p0.y, p1.y, yNext, t);
+  })();
+  // Smoothstep blend: 0 at x=200, 1 at x=500
+  const blend = Math.min(1, Math.max(0, (x - 200) / 300));
+  const s = blend * blend * (3 - 2 * blend); // smoothstep
+  return BASE_Y + (rawHeight - BASE_Y) * s;
 }
 
 // ── Terrain Manager ──
