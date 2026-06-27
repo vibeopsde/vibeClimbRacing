@@ -300,10 +300,10 @@ class Car {
 
     this.onGround = false;
 
-    // If car bottom is at or below ground level, snap to ground
-    if (carBottom >= avgGround - 2) {
+    // Only snap to ground when falling (vy >= 0) — lets car launch off crests
+    if (carBottom >= avgGround && this.vy >= 0) {
       this.y = avgGround - wheelOffset;
-      if (this.vy > 0) this.vy = 0;
+      this.vy = 0;
       this.onGround = true;
       // Rolling friction
       this.vx *= 0.992;
@@ -316,16 +316,16 @@ class Car {
       const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
       const upsideDown = normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4;
       if (!upsideDown) {
-        this.angVel *= 0.7;
+        this.angVel *= 0.6;
         // Target angle = terrain slope angle
         const slope = terrain.slopeAt(this.x);
         const targetAngle = Math.atan2(slope, 1);
-        // Smoothly steer car angle toward slope
+        // Smoothly steer car angle toward slope (gentler = more airtime off crests)
         let diff = targetAngle - this.angle;
         // Normalize to [-PI, PI]
         while (diff > Math.PI) diff -= 2 * Math.PI;
         while (diff < -Math.PI) diff += 2 * Math.PI;
-        this.angle += diff * 0.15 * dts;
+        this.angle += diff * 0.10 * dts;
       } else {
         // Upside down on ground — no slope correction, let flip timer run
         this.angVel *= 0.95;
