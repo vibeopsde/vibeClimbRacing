@@ -21,14 +21,20 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// ── Noise (layered sines, cheap & smooth) ──
+// ── Difficulty scaling — every 1000m the terrain gets rougher ──
+function difficultyAt(x) {
+  return 1 + Math.floor(x / 10000) * 0.35; // +35% amplitude per 1000m
+}
+
+// ── Noise (layered sines, scaled by difficulty) ──
 function noise(x) {
+  const d = difficultyAt(x);
   return (
-    Math.sin(x * 0.003) * 80 +
-    Math.sin(x * 0.007 + 1.3) * 40 +
-    Math.sin(x * 0.013 + 2.7) * 20 +
-    Math.sin(x * 0.021 + 4.1) * 10 +
-    Math.sin(x * 0.041 + 0.5) * 5
+    (Math.sin(x * 0.003) * 80 +
+     Math.sin(x * 0.007 + 1.3) * 40 +
+     Math.sin(x * 0.013 + 2.7) * 20 +
+     Math.sin(x * 0.021 + 4.1) * 10 +
+     Math.sin(x * 0.041 + 0.5) * 5) * d
   );
 }
 
@@ -444,6 +450,7 @@ const BASE_Y = 280;
 let terrain, car, coins, fuels, clouds;
 let camX = 0, camY = 0;
 let distance = 0;
+let level = 1;
 let running = false;
 let lastTime = 0;
 let gameTime = 0;
@@ -458,6 +465,7 @@ function initGame() {
   camX = 0;
   camY = 0;
   distance = 0;
+  level = 1;
   gameTime = 0;
   running = true;
   lastTime = performance.now();
@@ -501,15 +509,33 @@ function update(dt) {
 
   distance = Math.max(distance, Math.floor(car.x / 10));
 
+  // ── Level-Up every 1000m ──
+  const newLevel = 1 + Math.floor(distance / 1000);
+  if (newLevel > level) {
+    const bonus = (newLevel - level) * 10 * newLevel; // cumulative bonus for skipped levels
+    level = newLevel;
+    coins.collected += bonus;
+    showLevelUp(level, bonus);
+  }
+
   // Update HUD
   document.getElementById("dist").textContent = distance;
   document.getElementById("coins").textContent = coins.collected;
   document.getElementById("fuel-bar-fill").style.width = car.fuel + "%";
+  document.getElementById("level").textContent = level;
 
   // Check game over conditions
   if (car.fuel <= 0 && Math.abs(car.vx) < 0.3) {
     car.dead = true;
   }
+}
+
+function showLevelUp(lvl, bonus) {
+  const el = document.getElementById("levelup");
+  el.textContent = `⭐ Level ${lvl}!  +${bonus} Taler`;
+  el.classList.remove("show");
+  void el.offsetWidth; // force reflow to restart animation
+  el.classList.add("show");
 }
 
 function render() {
@@ -612,6 +638,7 @@ function gameOver() {
   running = false;
   document.getElementById("final-dist").textContent = distance;
   document.getElementById("final-coins").textContent = coins.collected;
+  document.getElementById("final-level").textContent = level;
   document.getElementById("gameover").classList.add("show");
 }
 
