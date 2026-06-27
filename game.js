@@ -1202,13 +1202,16 @@ function drawRunProfile() {
   const plotH = ch - padT - padB;
 
   // World → screen mapping
+  // Game Y: small=y=high terrain (up on screen), large y=low terrain (down).
+  // Chart: small game-Y (peak) must map to TOP, large game-Y (valley) to BOTTOM.
   const maxX = Math.max(runCrashX, 100);
   const trackYs = runTrack.map(t => t.y);
   const yMin = Math.min(...trackYs) - 30;
   const yMax = Math.max(...trackYs) + 30;
   const yRange = Math.max(yMax - yMin, 50);
   const toX = (wx) => padL + (wx / maxX) * plotW;
-  const toY = (wy) => padT + (1 - (wy - yMin) / yRange) * plotH;
+  // Flip: small game-Y (peak) → top of chart, large game-Y (valley) → bottom
+  const toY = (wy) => padT + ((wy - yMin) / yRange) * plotH;
 
   // ── Background ──
   c.fillStyle = "rgba(0,0,0,0.25)";
@@ -1319,13 +1322,14 @@ function drawRunProfile() {
   }
 
   // ── Y-axis labels (height in m) ──
+  // Game Y: small=peak (top of chart), large=valley (bottom). Height = (BASE_Y - gameY)/10.
   c.fillStyle = "rgba(255,255,255,0.35)";
   c.font = "8px sans-serif";
   c.textAlign = "right";
   const yMid = (yMin + yMax) / 2;
+  const heightTop = ((BASE_Y - yMin) / 10).toFixed(0);   // yMin = peak = top
   const heightMid = ((BASE_Y - yMid) / 10).toFixed(0);
-  const heightTop = ((BASE_Y - yMax) / 10).toFixed(0);
-  const heightBot = ((BASE_Y - yMin) / 10).toFixed(0);
+  const heightBot = ((BASE_Y - yMax) / 10).toFixed(0);    // yMax = valley = bottom
   c.fillText(heightTop + "m", padL - 4, padT + 4);
   c.fillText(heightMid + "m", padL - 4, padT + plotH / 2 + 3);
   c.fillText(heightBot + "m", padL - 4, padT + plotH - 2);
