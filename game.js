@@ -1,12 +1,101 @@
 "use strict";
 
-// ══════════════════════════════════════════
+// ════════════════════════════════════════
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
-// ══════════════════════════════════════════
+// ════════════════════════════════════════
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 let W, H, DPR;
+
+// ── Sound System (Web Audio API synth — zero assets) ──
+class SoundSystem {
+  constructor() {
+    this.ctx = null;
+    this.engineOsc = null;
+    this.engineGain = null;
+    this.muted = false;
+  }
+
+  // Must be called from a user gesture (click/touch) to satisfy autoplay policies
+  init() {
+    if (this.ctx) return;
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this._startEngine();
+    } catch (e) { /* no audio support */ }
+  }
+
+  _startEngine() {
+    if (!this.ctx) return;
+    this.engineOsc = this.ctx.createOscillator();
+    this.engineGain = this.ctx.createGain();
+    this.engineOsc.type = "sawtooth";
+    this.engineOsc.frequency.value = 60;
+    this.engineGain.gain.value = 0;
+    this.engineOsc.connect(this.engineGain);
+    this.engineGain.connect(this.ctx.destination);
+    this.engineOsc.start();
+  }
+
+  // Update engine sound: pitch & volume scale with speed
+  updateEngine(vx, onGround) {
+    if (!this.engineOsc || !this.engineGain || this.muted) return;
+    const speed = Math.abs(vx);
+    const freq = 50 + speed * 15; // 50Hz idle → ~260Hz at max speed
+    const vol = onGround ? Math.min(0.12, 0.02 + speed * 0.008) : 0.01;
+    this.engineOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.05);
+    this.engineGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.08);
+  }
+
+  _tone(freq, dur, type = "sine", vol = 0.2, when = 0) {
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime + when;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.connect(g);
+    g.connect(this.ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur);
+  }
+
+  _noise(dur, vol = 0.3, when = 0) {
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime + when;
+    const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 800;
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(this.ctx.destination);
+    src.start(t);
+    src.stop(t + dur);
+  }
+
+  coin() { this._tone(880, 0.08, "sine", 0.15); this._tone(1320, 0.12, "sine", 0.15, 0.06); }
+  fuel() { this._tone(440, 0.1, "triangle", 0.18); this._tone(660, 0.15, "triangle", 0.15, 0.08); }
+  levelUp() { this._tone(523, 0.1, "square", 0.12); this._tone(659, 0.1, "square", 0.12, 0.1); this._tone(784, 0.2, "square", 0.12, 0.2); }
+  crash() { this._noise(0.4, 0.4); this._tone(80, 0.5, "sawtooth", 0.25, 0.05); }
+
+  toggleMute() {
+    this.muted = !this.muted;
+    if (this.engineGain) this.engineGain.gain.setTargetAtTime(this.muted ? 0 : 0.02, this.ctx.currentTime, 0.1);
+    return this.muted;
+  }
+}
+const sfx = new SoundSystem();
 
 function resize() {
   DPR = window.devicePixelRatio || 1;
@@ -350,6 +439,7 @@ class CoinSystem {
       if (dx * dx + dy * dy < 1800) {
         c.collected = true;
         this.collected++;
+        sfx.coin();
       }
     }
   }
@@ -397,6 +487,7 @@ class FuelSystem {
       if (dx * dx + dy * dy < 2500) {
         c.collected = true;
         car.fuel = Math.min(100, car.fuel + 35);
+        sfx.fuel();
       }
     }
   }
@@ -501,6 +592,7 @@ function loop(now) {
 function update(dt) {
   terrain.update(car.x);
   car.update(dt, terrain, input);
+  sfx.updateEngine(car.vx, car.onGround);
   coins.update(camX, terrain, car.x);
   fuels.update(camX, terrain);
   coins.checkCollect(car);
@@ -524,6 +616,7 @@ function update(dt) {
     level = newLevel;
     coins.collected += bonus;
     showLevelUp(level, bonus);
+    sfx.levelUp();
   }
 
   // Update HUD
@@ -644,6 +737,7 @@ function render() {
 
 function gameOver() {
   running = false;
+  sfx.crash();
   document.getElementById("final-dist").textContent = distance;
   document.getElementById("final-coins").textContent = coins.collected;
   document.getElementById("final-level").textContent = level;
@@ -683,10 +777,12 @@ function bindButtons() {
 // ── Start / Restart ──
 document.getElementById("start-btn").addEventListener("click", () => {
   document.getElementById("start").classList.add("hide");
+  sfx.init();
   initGame();
 });
 document.getElementById("restart-btn").addEventListener("click", () => {
   document.getElementById("gameover").classList.remove("show");
+  sfx.init();
   initGame();
 });
 
