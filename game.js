@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.1.3";
+const VERSION = "v2606.1.4";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -512,9 +512,14 @@ class Car {
       this.y = avgGround - restLen;
       this.onGround = true;
 
-      // Terrain-following vy (allows launches off crests)
+      // Terrain-following: project velocity onto slope direction
+      // This preserves gravity's along-slope component (uphill slows, downhill accelerates)
+      // instead of overwriting vy and losing gravity entirely
       const slope = terrain.slopeAt(this.x);
-      this.vy = slope * this.vx;
+      const s = slope;
+      const vAlong = (this.vx + this.vy * s) / (1 + s * s);
+      this.vx = vAlong;
+      this.vy = s * vAlong;
 
       // Rolling friction (upgradeable)
       this.vx *= this.grip;
