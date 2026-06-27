@@ -1749,7 +1749,7 @@ document.addEventListener("webkitfullscreenchange", () => {
 });
 
 // ── Boot: show name input or start screen ──
-document.getElementById("version-tag").textContent = `v${VERSION}`;
+document.getElementById("version-tag").textContent = VERSION;
 if (saveData.name) {
   document.getElementById("nameinput").classList.add("hide");
   showStartScreen();
