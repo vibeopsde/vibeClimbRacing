@@ -17,11 +17,10 @@ const FUEL_GAP_MAX = 7000;        // max gap between fuel cans (intentionally ra
 const BASE_Y = 280;               // ground level (world Y)
 const CAM_LERP_X = 0.08;           // camera follow lerp factor (X)
 const CAM_LERP_Y = 0.05;           // camera follow lerp factor (Y — smoother for vertical)
-const CAM_Y_MIN = -400;            // camera Y clamp (upper)
-const CAM_Y_MAX = 200;             // camera Y clamp (lower)
 const FLIP_DEATH_TIME = 0.3;       // seconds upside-down before death (near-instant, like original)
 const LOOPING_BONUS = 10;         // coins awarded per full loop (360° rotation in air)
 const MAX_SPRING = 15;            // max visual spring compression (px)
+const AIR_CONTROL = 0.002;        // air rotation force — capped, prevents death spins
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -221,21 +220,18 @@ const UPGRADES = {
     desc: "+10% Beschleunigung pro Level",
     maxLevel: 5,
     costs: [100, 250, 500, 1000, 2000],
-    apply: (lvl) => ({ engineFwd: 0.38 * (1 + 0.1 * lvl), engineBack: 0.45 * (1 + 0.1 * lvl) }),
   },
   tires: {
     name: "🛞 Reifen",
     desc: "+15% Bodenhaftung pro Level",
     maxLevel: 5,
     costs: [100, 250, 500, 1000, 2000],
-    apply: (lvl) => ({ grip: 0.992 + 0.001 * lvl, slopeAlign: 0.10 + 0.02 * lvl }),
   },
   tank: {
     name: "⛽ Tank",
     desc: "+20% Tankkapazität, weniger Verbrauch",
     maxLevel: 5,
     costs: [100, 250, 500, 1000, 2000],
-    apply: (lvl) => ({ maxFuel: 100 + 20 * lvl, drainRate: 0.05 * (1 - 0.08 * lvl), passiveDrain: 0.006 * (1 - 0.08 * lvl) }),
   },
 };
 
@@ -647,7 +643,6 @@ class Car {
     if (!this.onGround) {
       // Air control: gentle nudge, capped — for wheelie/endo adjustment, not death spins
       // Loopings happen from terrain launches + angular momentum, NOT from holding gas
-      const AIR_CONTROL = 0.002;
       if (gas) this.angVel = Math.max(this.angVel - AIR_CONTROL * dts, -0.04);
       if (brake) this.angVel = Math.min(this.angVel + AIR_CONTROL * dts, 0.04);
     }
@@ -684,6 +679,7 @@ class Car {
     const carBottom = this.y + restLen;
 
     this.onGround = false;
+    let slope = 0;  // cached once per frame, reused for slope alignment
 
     // Snap to ground when at/below terrain
     if (carBottom >= avgGround) {
@@ -693,7 +689,7 @@ class Car {
       // Terrain-following: project velocity onto slope direction
       // This preserves gravity's along-slope component (uphill slows, downhill accelerates)
       // instead of overwriting vy and losing gravity entirely
-      const slope = terrain.slopeAt(this.x);
+      slope = terrain.slopeAt(this.x);
       const s = slope;
       const vAlong = (this.vx + this.vy * s) / (1 + s * s);
       this.vx = vAlong;
@@ -728,14 +724,14 @@ class Car {
     }
 
     // ── Slope alignment when grounded (skip if upside-down!) ──
+    // Normalized angle [0, 2π) — cached once, used for both slope alignment and flip check
+    const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     if (this.onGround) {
       // Check if car is upside-down (roof on ground) — tighter threshold matches flip check
-      const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
       const upsideDown = normAngle > Math.PI * this.flipThreshold && normAngle < Math.PI * (2 - this.flipThreshold);
       if (!upsideDown) {
         this.angVel *= (1 - 0.4 / massFactor);  // ground angular damping: heavier = more damping
         // Target angle = terrain slope angle
-        const slope = terrain.slopeAt(this.x);
         const targetAngle = Math.atan2(slope, 1);
         // Smoothly steer car angle toward slope — heavier inertia = slower alignment
         let diff = targetAngle - this.angle;
@@ -756,7 +752,6 @@ class Car {
 
     // Death: flipped AND on ground → game over (looping in air is fine!)
     // Use tighter threshold so near-miss landings don't trigger death
-    const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     const flipped = normAngle > Math.PI * this.flipThreshold && normAngle < Math.PI * (2 - this.flipThreshold);
     if (flipped && this.onGround) {
       this.flipTime += dt;
@@ -1202,7 +1197,7 @@ function update(dt) {
   // ── Track terrain height for end-of-run profile ──
   const trackX = car.x - (car.x % TRACK_SAMPLE_INTERVAL);
   if (runTrack.length === 0 || trackX > runTrack[runTrack.length - 1].x) {
-    runTrack.push({ x: car.x, y: terrain.groundAt(car.x), level: level });
+    runTrack.push({ x: trackX, y: terrain.groundAt(trackX), level: level });
   }
 
   // Record pickups for the profile (before checkCollect removes them)
