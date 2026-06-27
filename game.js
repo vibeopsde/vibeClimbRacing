@@ -17,6 +17,7 @@ const CAM_LERP_Y = 0.06;           // camera follow lerp factor (Y)
 const CAM_Y_MIN = -400;            // camera Y clamp (upper)
 const CAM_Y_MAX = 200;             // camera Y clamp (lower)
 const FLIP_DEATH_TIME = 0.3;       // seconds upside-down before death (near-instant, like original)
+const LOOPING_BONUS = 10;         // coins awarded per full loop (360° rotation in air)
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -332,6 +333,8 @@ class Car {
     this.onGround = false;
     this.dead = false;
     this.flipTime = 0;
+    this.airSpin = 0;          // accumulated rotation in air (for loop detection)
+    this.lastAngle = 0;       // previous frame angle (for delta tracking)
 
     // Apply upgrades from save
     const u = saveData.upgrades;
@@ -406,6 +409,16 @@ class Car {
     this.x += this.vx * dts;
     this.y += this.vy * dts;
     this.angle += this.angVel * dts;
+
+    // ── Loop detection: accumulate rotation while airborne ──
+    if (!this.onGround) {
+      let delta = this.angle - this.lastAngle;
+      this.airSpin += delta;
+    } else {
+      this.airSpin = 0;
+    }
+    this.lastAngle = this.angle;
+    this.loopCompleted = Math.abs(this.airSpin) >= Math.PI * 2;
 
     // ── Ground collision (direct snap, no bounce) ──
     // Wheel positions for slope detection
@@ -768,6 +781,15 @@ function update(dt) {
 
   distance = Math.max(distance, Math.floor(car.x / 10));
 
+  // ── Looping bonus: 360° rotation in air → bonus coins ──
+  if (car.loopCompleted) {
+    coins.collected += LOOPING_BONUS;
+    showLevelUp(0, LOOPING_BONUS);  // reuse popup with level=0 to signal "Looping!"
+    sfx.levelUp();
+    car.airSpin = 0;                // reset so consecutive loops count
+    car.loopCompleted = false;
+  }
+
   // ── Level-Up every 1000m ──
   const newLevel = 1 + Math.floor(distance / 1000);
   if (newLevel > level) {
@@ -792,7 +814,9 @@ function update(dt) {
 
 function showLevelUp(lvl, bonus) {
   const el = document.getElementById("levelup");
-  el.textContent = `⭐ Level ${lvl}!  +${bonus} Taler`;
+  el.textContent = lvl === 0
+    ? `🔄 Looping!  +${bonus} Taler`
+    : `⭐ Level ${lvl}!  +${bonus} Taler`;
   el.classList.remove("show");
   void el.offsetWidth; // force reflow to restart animation
   el.classList.add("show");
