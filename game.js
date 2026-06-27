@@ -733,11 +733,16 @@ class CoinSystem {
   constructor() { this.coins = []; this.collected = 0; this.nextSpawnX = 300; }
 
   update(camX, terrain, carX) {
-    // Spawn coins ahead
-    while (this.nextSpawnX < camX + VIEW_AHEAD) {
+    // Use carX (not camX) for spawn frontier — camX lags behind the car,
+    // so camX + VIEW_AHEAD may be beyond generated terrain, causing
+    // groundAt() to return stale/wrong heights → coins spawn underground.
+    const spawnFrontier = Math.max(camX, carX) + VIEW_AHEAD;
+    while (this.nextSpawnX < spawnFrontier) {
       // Random gap between coins
       const gap = COIN_GAP_MIN + Math.random() * (COIN_GAP_MAX - COIN_GAP_MIN);
       this.nextSpawnX += gap;
+      // Ensure terrain is generated at spawn position before querying height
+      terrain.update(this.nextSpawnX);
       // Place coin slightly above terrain
       const gy = terrain.groundAt(this.nextSpawnX);
       this.coins.push({
@@ -795,10 +800,16 @@ class CoinSystem {
 class FuelSystem {
   constructor() { this.cans = []; this.nextSpawnX = 800; }
 
-  update(camX, terrain) {
-    while (this.nextSpawnX < camX + VIEW_AHEAD) {
+  update(camX, terrain, carX) {
+    // Use carX (not camX) for spawn frontier — camX lags behind the car,
+    // so camX + VIEW_AHEAD may be beyond generated terrain, causing
+    // groundAt() to return stale/wrong heights → fuels spawn underground.
+    const spawnFrontier = Math.max(camX, carX) + VIEW_AHEAD;
+    while (this.nextSpawnX < spawnFrontier) {
       const gap = FUEL_GAP_MIN + Math.random() * (FUEL_GAP_MAX - FUEL_GAP_MIN);
       this.nextSpawnX += gap;
+      // Ensure terrain is generated at spawn position before querying height
+      terrain.update(this.nextSpawnX);
       const gy = terrain.groundAt(this.nextSpawnX);
       this.cans.push({ x: this.nextSpawnX, y: gy - 30, collected: false });
     }
@@ -921,7 +932,7 @@ function update(dt) {
   car.update(dt, terrain, input);
   sfx.updateEngine(car.vx, car.onGround);
   coins.update(camX, terrain, car.x);
-  fuels.update(camX, terrain);
+  fuels.update(camX, terrain, car.x);
   coins.checkCollect(car);
   fuels.checkCollect(car);
 
