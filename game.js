@@ -4,9 +4,39 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
+// ── Tunable Constants ──
+const COIN_RADIUS = 1800;         // coin pickup radius² (dx²+dy²)
+const FUEL_RADIUS = 2500;         // fuel pickup radius²
+const FUEL_REFILL = 35;           // fuel restored per can
+const COIN_GAP_MIN = 120;         // min gap between coins
+const COIN_GAP_MAX = 200;         // max gap between coins
+const FUEL_GAP_MIN = 600;         // min gap between fuel cans
+const FUEL_GAP_MAX = 800;         // max gap between fuel cans
+const CAM_LERP_X = 0.08;           // camera follow lerp factor (X)
+const CAM_LERP_Y = 0.06;           // camera follow lerp factor (Y)
+const CAM_Y_MIN = -400;            // camera Y clamp (upper)
+const CAM_Y_MAX = 200;             // camera Y clamp (lower)
+const FLIP_DEATH_TIME = 2.0;       // seconds upside-down before death
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 let W, H, DPR;
+
+// ── roundRect polyfill for older browsers (Chrome <99, Safari <16) ──
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (typeof r === "number") r = [r, r, r, r];
+    else if (Array.isArray(r) && r.length === 1) r = [r[0], r[0], r[0], r[0]];
+    this.beginPath();
+    this.moveTo(x + r[0], y);
+    this.arcTo(x + w, y, x + w, y + h, r[1]);
+    this.arcTo(x + w, y + h, x, y + h, r[2]);
+    this.arcTo(x, y + h, x, y, r[3]);
+    this.arcTo(x, y, x + w, y, r[0]);
+    this.closePath();
+    return this;
+  };
+}
 
 // ── Sound System (Web Audio API synth — zero assets) ──
 class SoundSystem {
@@ -258,6 +288,32 @@ class Terrain {
     const dx = 5;
     return (this.groundAt(x + dx) - this.groundAt(x - dx)) / (2 * dx);
   }
+
+  // Find index range of points visible on screen [camX-50, camX+W+50]
+  // Uses binary search — O(log n) instead of O(n) per frame.
+  visibleRange(camX, screenW) {
+    const pts = this.points;
+    const minX = camX - 50;
+    const maxX = camX + screenW + 50;
+
+    // Binary search for first point >= minX
+    let lo = 0, hi = pts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (pts[mid].x < minX) lo = mid + 1; else hi = mid;
+    }
+    const start = Math.max(0, lo - 1); // include one point before for lineTo continuity
+
+    // Binary search for first point > maxX
+    lo = start; hi = pts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (pts[mid].x <= maxX) lo = mid + 1; else hi = mid;
+    }
+    const end = Math.min(pts.length, lo + 1); // include one point after
+
+    return [start, end];
+  }
 }
 
 // ── Car Physics ──
@@ -274,8 +330,8 @@ class Car {
     this.mass = 1.5;
     this.inertia = 4500;
     this.onGround = false;
-    this.airborne = 0;
     this.dead = false;
+    this.flipTime = 0;
 
     // Apply upgrades from save
     const u = saveData.upgrades;
@@ -382,7 +438,6 @@ class Car {
 
     // ── Slope alignment when grounded (skip if upside-down!) ──
     if (this.onGround) {
-      this.airborne = 0;
       // Check if car is upside-down (roof on ground)
       const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
       const upsideDown = normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4;
@@ -402,7 +457,7 @@ class Car {
         this.angVel *= 0.95;
       }
     } else {
-      this.airborne += dts;
+      // Airborne — no slope correction
     }
 
     // Clamp fuel
@@ -411,8 +466,8 @@ class Car {
     // Death: flipped for > 2 seconds
     const normAngle = ((this.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     if (normAngle > Math.PI * 0.6 && normAngle < Math.PI * 1.4) {
-      this.flipTime = (this.flipTime || 0) + dt;
-      if (this.flipTime > 2.0) this.dead = true;
+      this.flipTime += dt;
+      if (this.flipTime > FLIP_DEATH_TIME) this.dead = true;
     } else {
       this.flipTime = 0;
     }
@@ -461,7 +516,7 @@ class Car {
     const perpX = -fwdY;
     const perpY = fwdX;
     const halfWB = this.wheelBase / 2;
-    const wy = 22;
+    const wy = 20;
 
     for (const sign of [-1, 1]) {
       const wx = this.x + fwdX * (halfWB * sign) + perpX * wy;
@@ -506,7 +561,7 @@ class CoinSystem {
     // Spawn coins ahead
     while (this.nextSpawnX < camX + VIEW_AHEAD) {
       // Random gap between coins
-      const gap = 120 + Math.random() * 200;
+      const gap = COIN_GAP_MIN + Math.random() * COIN_GAP_MAX;
       this.nextSpawnX += gap;
       // Place coin slightly above terrain
       const gy = terrain.groundAt(this.nextSpawnX);
@@ -517,8 +572,14 @@ class CoinSystem {
         phase: Math.random() * Math.PI * 2,
       });
     }
-    // Remove collected/old
-    this.coins = this.coins.filter(c => !c.collected && c.x > camX - VIEW_BEHIND);
+    // Remove collected/old — in-place removal (no new array per frame)
+    let w = 0;
+    for (let r = 0; r < this.coins.length; r++) {
+      const c = this.coins[r];
+      if (c.collected || c.x <= camX - VIEW_BEHIND) continue;
+      this.coins[w++] = c;
+    }
+    this.coins.length = w;
   }
 
   checkCollect(car) {
@@ -526,7 +587,7 @@ class CoinSystem {
       if (c.collected) continue;
       const dx = c.x - car.x;
       const dy = c.y - car.y;
-      if (dx * dx + dy * dy < 1800) {
+      if (dx * dx + dy * dy < COIN_RADIUS) {
         c.collected = true;
         this.collected++;
         sfx.coin();
@@ -561,12 +622,19 @@ class FuelSystem {
 
   update(camX, terrain) {
     while (this.nextSpawnX < camX + VIEW_AHEAD) {
-      const gap = 600 + Math.random() * 800;
+      const gap = FUEL_GAP_MIN + Math.random() * FUEL_GAP_MAX;
       this.nextSpawnX += gap;
       const gy = terrain.groundAt(this.nextSpawnX);
       this.cans.push({ x: this.nextSpawnX, y: gy - 30, collected: false });
     }
-    this.cans = this.cans.filter(c => !c.collected && c.x > camX - VIEW_BEHIND);
+    // Remove collected/old — in-place removal (no new array per frame)
+    let w = 0;
+    for (let r = 0; r < this.cans.length; r++) {
+      const c = this.cans[r];
+      if (c.collected || c.x <= camX - VIEW_BEHIND) continue;
+      this.cans[w++] = c;
+    }
+    this.cans.length = w;
   }
 
   checkCollect(car) {
@@ -574,9 +642,9 @@ class FuelSystem {
       if (c.collected) continue;
       const dx = c.x - car.x;
       const dy = c.y - car.y;
-      if (dx * dx + dy * dy < 2500) {
+      if (dx * dx + dy * dy < FUEL_RADIUS) {
         c.collected = true;
-        car.fuel = Math.min(100, car.fuel + 35);
+        car.fuel = Math.min(car.maxFuel, car.fuel + FUEL_REFILL);
         sfx.fuel();
       }
     }
@@ -691,11 +759,11 @@ function update(dt) {
   // Camera follows car (smooth lerp, clamped to prevent runaway)
   const targetCamX = car.x - W * 0.35;
   const targetCamY = car.y - H * 0.55;
-  camX += (targetCamX - camX) * 0.08;
-  camY += (targetCamY - camY) * 0.06;
+  camX += (targetCamX - camX) * CAM_LERP_X;
+  camY += (targetCamY - camY) * CAM_LERP_Y;
   // Hard clamp camera Y so it never flies off into the sky
-  if (camY < -400) camY = -400;
-  if (camY > 200) camY = 200;
+  if (camY < CAM_Y_MIN) camY = CAM_Y_MIN;
+  if (camY > CAM_Y_MAX) camY = CAM_Y_MAX;
 
   distance = Math.max(distance, Math.floor(car.x / 10));
 
@@ -777,17 +845,11 @@ function render() {
   // Draw terrain as filled polygon
   ctx.beginPath();
   const pts = terrain.points;
-  const screenStart = camX - 50;
-  let firstDrawn = false;
-  for (let i = 0; i < pts.length; i++) {
+  const [tStart, tEnd] = terrain.visibleRange(camX, W);
+  for (let i = tStart; i < tEnd; i++) {
     const sx = pts[i].x - camX;
-    if (sx < -50 || sx > W + 50) continue;
-    if (!firstDrawn) {
-      ctx.moveTo(sx, pts[i].y - camY);
-      firstDrawn = true;
-    } else {
-      ctx.lineTo(sx, pts[i].y - camY);
-    }
+    if (i === tStart) ctx.moveTo(sx, pts[i].y - camY);
+    else ctx.lineTo(sx, pts[i].y - camY);
   }
   ctx.lineTo(W + 50, H + 100);
   ctx.lineTo(-50, H + 100);
@@ -797,16 +859,10 @@ function render() {
 
   // Grass layer on top of terrain
   ctx.beginPath();
-  firstDrawn = false;
-  for (let i = 0; i < pts.length; i++) {
+  for (let i = tStart; i < tEnd; i++) {
     const sx = pts[i].x - camX;
-    if (sx < -50 || sx > W + 50) continue;
-    if (!firstDrawn) {
-      ctx.moveTo(sx, pts[i].y - camY);
-      firstDrawn = true;
-    } else {
-      ctx.lineTo(sx, pts[i].y - camY);
-    }
+    if (i === tStart) ctx.moveTo(sx, pts[i].y - camY);
+    else ctx.lineTo(sx, pts[i].y - camY);
   }
   ctx.strokeStyle = "#4CAF50";
   ctx.lineWidth = 8;
@@ -842,8 +898,6 @@ function gameOver() {
 }
 
 // ── Input ──
-const btnGas = document.getElementById("btn-gas") || { addEventListener: () => {} };
-const btnBrake = document.getElementById("btn-brake") || { addEventListener: () => {} };
 
 // Keyboard
 document.addEventListener("keydown", (e) => {
@@ -855,7 +909,7 @@ document.addEventListener("keyup", (e) => {
   if (e.code === "ArrowLeft" || e.code === "KeyA") input.brake = false;
 });
 
-// Touch / mouse buttons (will be bound after DOM ready)
+// Touch / mouse buttons
 function bindButtons() {
   const gasEl = document.getElementById("btn-gas");
   const brakeEl = document.getElementById("btn-brake");
@@ -905,6 +959,7 @@ document.getElementById("start-btn").addEventListener("click", () => {
 // Restart
 document.getElementById("restart-btn").addEventListener("click", () => {
   document.getElementById("gameover").classList.add("hide");
+  sfx.init();
   initGame();
 });
 
