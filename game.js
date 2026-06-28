@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.3.0";
+const VERSION = "v2606.3.1";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -560,6 +560,7 @@ function ensureSurfaceRegions(upToX) {
 
 // Get surface type at world x
 function surfaceAt(x) {
+  if (surfaceRegions.length === 0) return SURFACES.grass;
   let current = surfaceRegions[0];
   for (const region of surfaceRegions) {
     if (region.startX <= x) current = region;
@@ -1468,6 +1469,7 @@ function weatherEmoji(name) {
 }
 
 function initGame() {
+ try {
   // New random terrain per run
   resetTerrain();
   terrain = new Terrain();
@@ -1489,6 +1491,10 @@ function initGame() {
   qualityHighStreak = 0;
   lastTime = performance.now();
   requestAnimationFrame(loop);
+ } catch(e) {
+  document.getElementById("version-tag").textContent = "INIT ERROR: " + e.message;
+  console.error("initGame() crash:", e.message, e.stack);
+ }
 }
 
 // ── Main Loop ──
@@ -1594,6 +1600,7 @@ function showLevelUp(lvl, bonus) {
 }
 
 function render() {
+ try {
   const w = currentWeather || WEATHER_TYPES.sunny;
 
   // Sky gradient (weather-dependent)
@@ -1763,6 +1770,13 @@ function render() {
     ctx.fill();
   }
   car.draw(ctx, camX, camY);
+ } catch(e) {
+  // Debug: draw error text on canvas so we can see what's wrong
+  ctx.fillStyle = "red";
+  ctx.font = "16px monospace";
+  ctx.fillText("RENDER ERROR: " + e.message, 20, 40);
+  console.error("render() crash:", e.message, e.stack);
+ }
 }
 
 function gameOver() {
