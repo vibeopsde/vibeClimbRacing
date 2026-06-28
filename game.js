@@ -4,12 +4,12 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.12";
+const VERSION = "v2606.2.13";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
 const FUEL_PICKUP_DIST_SQ = 2500;  // fuel pickup distance²
-const FUEL_REFILL = 35;           // fuel restored per can
+const FUEL_REFILL_PCT = 0.35;     // fuel restored per can (35% of tank capacity)
 const COIN_GAP_MIN = 600;         // min gap between coins (5x rarer — factor 0.2)
 const COIN_GAP_MAX = 1000;        // max gap between coins (5x rarer — factor 0.2)
 const FUEL_GAP_MIN = 3000;        // min gap between fuel cans (intentionally rare)
@@ -617,7 +617,6 @@ class Car {
     this.onGround = false;
     this.dead = false;
     this.airSpin = 0;          // accumulated rotation in air (for loop detection)
-    this.wasAirborne = false;  // track air→ground transition (kept for potential future use)
 
     // Visual suspension — spring compression per wheel (visual only, no physics impact)
     this.springL = 0;
@@ -876,8 +875,6 @@ class Car {
       }
     }
 
-    // Track airborne state for next frame's landing crash check
-    this.wasAirborne = !this.onGround;
   }
 
   draw(ctx, camX, camY) {
@@ -1198,7 +1195,7 @@ class FuelSystem {
       const dy = c.y - car.y;
       if (dx * dx + dy * dy < FUEL_PICKUP_DIST_SQ) {
         c.collected = true;
-        car.fuel = Math.min(car.maxFuel, car.fuel + FUEL_REFILL);
+        car.fuel = Math.min(car.maxFuel, car.fuel + car.maxFuel * FUEL_REFILL_PCT);
         sfx.fuel();
       }
     }
@@ -1525,9 +1522,14 @@ function drawRunProfile() {
   // Game Y: small=y=high terrain (up on screen), large y=low terrain (down).
   // Chart: small game-Y (peak) must map to TOP, large game-Y (valley) to BOTTOM.
   const maxX = Math.max(runCrashX, 100);
-  const trackYs = runTrack.map(t => t.y);
-  const yMin = Math.min(...trackYs) - 30;
-  const yMax = Math.max(...trackYs) + 30;
+  // Compute yMin/yMax via loop (not spread — runTrack can exceed 1000 entries on long runs)
+  let yMin = Infinity, yMax = -Infinity;
+  for (const t of runTrack) {
+    if (t.y < yMin) yMin = t.y;
+    if (t.y > yMax) yMax = t.y;
+  }
+  yMin -= 30;
+  yMax += 30;
   const yRange = Math.max(yMax - yMin, 50);
   const toX = (wx) => padL + (wx / maxX) * plotW;
   // Flip: small game-Y (peak) → top of chart, large game-Y (valley) → bottom
