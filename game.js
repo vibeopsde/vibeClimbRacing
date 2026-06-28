@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.13";
+const VERSION = "v2606.2.14";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -617,6 +617,7 @@ class Car {
     this.onGround = false;
     this.dead = false;
     this.airSpin = 0;          // accumulated rotation in air (for loop detection)
+    this.wheelSpin = 0;        // accumulated wheel rotation for visual spin (radians)
 
     // Visual suspension — spring compression per wheel (visual only, no physics impact)
     this.springL = 0;
@@ -722,6 +723,10 @@ class Car {
     this.x += this.vx * dts;
     this.y += this.vy * dts;
     this.angle += this.angVel * dts;
+
+    // ── Visual wheel spin: accumulate rotation from forward velocity ──
+    // ω = v / r — both wheels spin the same direction (forward = clockwise in screen-space)
+    this.wheelSpin += (this.vx / this.wheelRadius) * dts;
 
     // ── Loop detection: accumulate angular velocity while airborne ──
     // Use angVel*dts (true rotation) NOT angle-lastAngle (corrupted by slope alignment)
@@ -930,12 +935,11 @@ class Car {
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // Spokes (rotate with speed)
-      const spin = (this.x / this.wheelRadius) * sign;
+      // Spokes (rotate with accumulated wheel spin — both wheels same direction)
       ctx.strokeStyle = "#7f8c8d";
       ctx.lineWidth = 2.5;
       for (let i = 0; i < 5; i++) {
-        const a = spin + (i * Math.PI * 2) / 5;
+        const a = this.wheelSpin + (i * Math.PI * 2) / 5;
         ctx.beginPath();
         ctx.moveTo(0, 0);
         ctx.lineTo(Math.cos(a) * 8, Math.sin(a) * 8);
@@ -1260,7 +1264,6 @@ let distance = 0;
 let level = 1;
 let lastTime = 0;
 let gameTime = 0;
-const input = { gas: false, brake: false };
 
 // ── Run tracking (for end-of-run elevation profile) ──
 let runTrack = [];     // sampled terrain heights: {x, y, level}
@@ -1658,15 +1661,25 @@ function drawRunProfile() {
 }
 
 // ── Input ──
+// Keyboard and touch are independent sources — releasing one must not kill the other.
+// We track them separately and OR them into the final input state each frame.
+const keyInput = { gas: false, brake: false };
+const touchInput = { gas: false, brake: false };
+const input = { gas: false, brake: false };
+
+function syncInput() {
+  input.gas = keyInput.gas || touchInput.gas;
+  input.brake = keyInput.brake || touchInput.brake;
+}
 
 // Keyboard
 document.addEventListener("keydown", (e) => {
-  if (e.code === "ArrowRight" || e.code === "KeyD") input.gas = true;
-  if (e.code === "ArrowLeft" || e.code === "KeyA") input.brake = true;
+  if (e.code === "ArrowRight" || e.code === "KeyD") { keyInput.gas = true; syncInput(); }
+  if (e.code === "ArrowLeft" || e.code === "KeyA") { keyInput.brake = true; syncInput(); }
 });
 document.addEventListener("keyup", (e) => {
-  if (e.code === "ArrowRight" || e.code === "KeyD") input.gas = false;
-  if (e.code === "ArrowLeft" || e.code === "KeyA") input.brake = false;
+  if (e.code === "ArrowRight" || e.code === "KeyD") { keyInput.gas = false; syncInput(); }
+  if (e.code === "ArrowLeft" || e.code === "KeyA") { keyInput.brake = false; syncInput(); }
 });
 
 // Touch / mouse buttons
@@ -1676,10 +1689,10 @@ function bindButtons() {
 
   function press(el, prop) {
     if (!el) return;
-    el.addEventListener("pointerdown", (e) => { e.preventDefault(); input[prop] = true; });
-    el.addEventListener("pointerup", (e) => { e.preventDefault(); input[prop] = false; });
-    el.addEventListener("pointerleave", () => { input[prop] = false; });
-    el.addEventListener("pointercancel", () => { input[prop] = false; });
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); touchInput[prop] = true; syncInput(); });
+    el.addEventListener("pointerup", (e) => { e.preventDefault(); touchInput[prop] = false; syncInput(); });
+    el.addEventListener("pointerleave", () => { touchInput[prop] = false; syncInput(); });
+    el.addEventListener("pointercancel", () => { touchInput[prop] = false; syncInput(); });
   }
   press(gasEl, "gas");
   press(brakeEl, "brake");
