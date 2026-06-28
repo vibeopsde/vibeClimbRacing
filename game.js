@@ -21,6 +21,7 @@ const FLIP_DEATH_TIME = 0.3;       // seconds upside-down before death (near-ins
 const LOOPING_BONUS = 10;         // coins awarded per full loop (360° rotation in air)
 const MAX_SPRING = 15;            // max visual spring compression (px)
 const AIR_CONTROL = 0.002;        // air rotation force — capped, prevents death spins
+const LANDING_CRASH_ANGLE = 1.3;  // ~75° — land more than this off-slope → instant crash (like HCR1)
 
 // ── Adaptive Quality (FPS-based render scaling) ──
 // Tracks FPS in a rolling window. If FPS drops, reduces render resolution
@@ -607,6 +608,7 @@ class Car {
     this.dead = false;
     this.flipTime = 0;
     this.airSpin = 0;          // accumulated rotation in air (for loop detection)
+    this.wasAirborne = false;  // track air→ground transition for landing crash check
 
     // Visual suspension — spring compression per wheel (visual only, no physics impact)
     this.springL = 0;
@@ -747,6 +749,21 @@ class Car {
       this.y = avgGround - restLen;
       this.onGround = true;
 
+      // ── Landing crash check: if we were airborne and land at a bad angle,
+      // crash immediately — like HCR1 where a bad landing = neck snap.
+      // Compare car angle to terrain slope; if difference > LANDING_CRASH_ANGLE (~75°), dead.
+      if (this.wasAirborne) {
+        slope = terrain.slopeAt(this.x);
+        const slopeAngle = Math.atan2(slope, 1);
+        let angleDiff = this.angle - slopeAngle;
+        // Normalize to [-PI, PI]
+        while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+        while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+        if (Math.abs(angleDiff) > LANDING_CRASH_ANGLE) {
+          this.dead = true;
+        }
+      }
+
       // Terrain-following: project velocity onto slope direction
       // This preserves gravity's along-slope component (uphill slows, downhill accelerates)
       // instead of overwriting vy and losing gravity entirely
@@ -820,6 +837,9 @@ class Car {
     } else {
       this.flipTime = 0;
     }
+
+    // Track airborne state for next frame's landing crash check
+    this.wasAirborne = !this.onGround;
   }
 
   draw(ctx, camX, camY) {
