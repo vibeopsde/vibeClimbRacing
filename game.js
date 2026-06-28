@@ -22,9 +22,80 @@ const LOOPING_BONUS = 10;         // coins awarded per full loop (360° rotation
 const MAX_SPRING = 15;            // max visual spring compression (px)
 const AIR_CONTROL = 0.002;        // air rotation force — capped, prevents death spins
 
+// ── Adaptive Quality (FPS-based render scaling) ──
+// Tracks FPS in a rolling window. If FPS drops, reduces render resolution
+// (DPR multiplier) to save GPU work. If FPS stays high, tries to increase it back.
+// Fast devices stay at full resolution; weak devices get smoother gameplay.
+const QUALITY_CHECK_INTERVAL = 60;  // check FPS every 60 frames (~1s at 60fps)
+const QUALITY_FPS_LOW = 45;         // below this → step down render scale
+const QUALITY_FPS_HIGH = 55;        // above this → streak toward stepping up
+const QUALITY_HIGH_STREAK = 3;      // consecutive good checks before upgrading
+const QUALITY_STEPS = [1.0, 0.85, 0.7, 0.55];  // renderScale multipliers (down = fewer pixels)
+const DPR_INITIAL_CAP = 2.0;        // never start above 2.0 even on DPR-3 devices
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 let W, H, DPR;
+let renderScale = QUALITY_STEPS[0];  // current render scale multiplier (adapted at runtime)
+let qualityIdx = 0;                  // current index into QUALITY_STEPS
+let qualityHighStreak = 0;           // consecutive "good FPS" checks
+let frameCount = 0;                  // counter for quality check interval
+let fpsSamples = [];                 // rolling FPS samples between checks
+let lastQualityCheckTime = 0;        // timestamp of last quality evaluation
+
+// ── Adaptive Quality Manager ──
+// Called every frame with the current delta time. Accumulates FPS samples
+// and periodically adjusts renderScale to keep FPS in the target range.
+function qualitySample(dt) {
+  frameCount++;
+  if (dt > 0) fpsSamples.push(1 / dt);
+
+  if (frameCount < QUALITY_CHECK_INTERVAL) return;
+
+  // Compute average FPS over the sampling window
+  let sum = 0;
+  for (const f of fpsSamples) sum += f;
+  const avgFPS = sum / fpsSamples.length;
+  fpsSamples = [];
+  frameCount = 0;
+
+  if (avgFPS < QUALITY_FPS_LOW) {
+    // FPS too low → step down (lower resolution, fewer pixels)
+    qualityHighStreak = 0;
+    if (qualityIdx < QUALITY_STEPS.length - 1) {
+      qualityIdx++;
+      renderScale = QUALITY_STEPS[qualityIdx];
+      resize();
+    }
+  } else if (avgFPS > QUALITY_FPS_HIGH) {
+    // FPS good → count streak; after N consecutive good checks, try stepping up
+    qualityHighStreak++;
+    if (qualityHighStreak >= QUALITY_HIGH_STREAK && qualityIdx > 0) {
+      qualityIdx--;
+      renderScale = QUALITY_STEPS[qualityIdx];
+      qualityHighStreak = 0;
+      resize();
+    }
+  } else {
+    // FPS in comfort zone — reset streak but don't change
+    qualityHighStreak = 0;
+  }
+}
+
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = window.innerWidth;
+  H = window.innerHeight;
+  // Apply adaptive render scale: effective DPR = device DPR × renderScale, capped.
+  // renderScale < 1 → fewer physical pixels rendered → GPU saves work.
+  // Browser upscales the canvas via CSS width/height (bilinear, looks fine in motion).
+  const effDPR = Math.min(DPR, DPR_INITIAL_CAP) * renderScale;
+  canvas.width = Math.round(W * effDPR);
+  canvas.height = Math.round(H * effDPR);
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(effDPR, 0, 0, effDPR, 0, 0);
+}
 
 // ── roundRect polyfill for older browsers (Chrome <99, Safari <16) ──
 if (!CanvasRenderingContext2D.prototype.roundRect) {
@@ -354,16 +425,6 @@ const VEHICLES = {
   },
 };
 
-function resize() {
-  DPR = window.devicePixelRatio || 1;
-  W = window.innerWidth;
-  H = window.innerHeight;
-  canvas.width = W * DPR;
-  canvas.height = H * DPR;
-  canvas.style.width = W + "px";
-  canvas.style.height = H + "px";
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-}
 window.addEventListener("resize", resize);
 resize();
 
@@ -1168,6 +1229,10 @@ function initGame() {
   runTrack = [];
   runPickups = [];
   runCrashX = 0;
+  // Reset adaptive quality state for the new run
+  frameCount = 0;
+  fpsSamples = [];
+  qualityHighStreak = 0;
   lastTime = performance.now();
   requestAnimationFrame(loop);
 }
@@ -1179,6 +1244,7 @@ function loop(now) {
 
   if (!car.dead) {
     gameTime += dt;
+    qualitySample(dt);
     update(dt);
     render();
     requestAnimationFrame(loop);
