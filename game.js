@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.3.3";
+const VERSION = "v2606.3.4";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -78,9 +78,9 @@ const SURFACES = {
 const WEATHER_TYPES = {
   sunny:  { name: "Sonnig",  skyTop: "#87CEEB", skyMid: "#B0E0E6", skyBot: "#E0F6FF", gripMod: 1.0,    farHill: "#7BA88A", midHill: "#3CB371", fog: 0 },
   night:  { name: "Nacht",   skyTop: "#0D1B2A", skyMid: "#1B2838", skyBot: "#2C3E50", gripMod: 1.0,    farHill: "#2C3E50", midHill: "#1E3A2A", fog: 0, dark: true },
-  rain:   { name: "Regen",   skyTop: "#708090", skyMid: "#778899", skyBot: "#B0C4DE", gripMod: 0.992,  farHill: "#5F7A6A", midHill: "#2E7D32", fog: 0, rain: true },
-  snow:   { name: "Schnee",  skyTop: "#C0D0E0", skyMid: "#D0E0F0", skyBot: "#E8F0F8", gripMod: 0.997,  farHill: "#A0B8C8", midHill: "#7090A0", fog: 0, snow: true },
-  fog:    { name: "Nebel",   skyTop: "#BEBEBE", skyMid: "#D0D0D0", skyBot: "#E0E0E0", gripMod: 0.998,  farHill: "#A0B0A0", midHill: "#5A8A5A", fog: 280 },
+  rain:   { name: "Regen",   skyTop: "#708090", skyMid: "#778899", skyBot: "#B0C4DE", gripMod: 1.0,    farHill: "#5F7A6A", midHill: "#2E7D32", fog: 0, rain: true },
+  snow:   { name: "Schnee",  skyTop: "#C0D0E0", skyMid: "#D0E0F0", skyBot: "#E8F0F8", gripMod: 1.0,    farHill: "#A0B8C8", midHill: "#7090A0", fog: 0, snow: true },
+  fog:    { name: "Nebel",   skyTop: "#BEBEBE", skyMid: "#D0D0D0", skyBot: "#E0E0E0", gripMod: 1.0,    farHill: "#A0B0A0", midHill: "#5A8A5A", fog: 280 },
 };
 
 // ── Adaptive Quality (FPS-based render scaling) ──
