@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.3.4";
+const VERSION = "v2606.3.5";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -47,14 +47,6 @@ const SURFACES = {
     grassColor: "#6B4E2F",
     grassDark: "#5B3E27",
     dirtColor: "#4A3520",
-  },
-  ice: {
-    name: "Eis",
-    gripMod: 1.005,      // less friction — slippery, hard to brake
-    maxVxMod: 1.1,
-    grassColor: "#B0E0E6",
-    grassDark: "#87CEEB",
-    dirtColor: "#5F9EA0",
   },
   sand: {
     name: "Sand",
@@ -515,7 +507,7 @@ let specialZones = [];
 // Current weather (picked per run)
 let currentWeather = null;
 
-const SURFACE_KEYS = ["grass", "mud", "ice", "sand", "gravel"];
+const SURFACE_KEYS = ["grass", "mud", "sand", "gravel"];
 const WEATHER_KEYS = ["sunny", "night", "rain", "snow", "fog"];
 
 function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
@@ -1470,7 +1462,7 @@ const TRACK_SAMPLE_INTERVAL = 50; // sample terrain every 50 world units (~5m)
 
 // ── Surface/Weather emoji helpers for HUD badges ──
 function surfEmoji(name) {
-  return { grass: "🛣️", mud: "🟤", ice: "❄️", sand: "🏜️", gravel: "🪨" }[name] || "🛣️";
+  return { grass: "🛣️", mud: "🟤", sand: "🏜️", gravel: "🪨" }[name] || "🛣️";
 }
 function weatherEmoji(name) {
   return { sunny: "☀️", night: "🌙", rain: "🌧️", snow: "🌨️", fog: "🌫️" }[name] || "☀️";
