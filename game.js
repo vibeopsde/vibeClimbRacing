@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.14";
+const VERSION = "v2606.3.0";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -25,6 +25,62 @@ const HEAD_DEATH_PAD = 14;        // px — head "touches" ground at ~170°+ (fu
                                   // 40° wheelies are safe (head is 50+px above ground);
 const WHEELIE_TORQUE = 0.012;     // engine torque lifting front when gassing on uphill (wheelie → backflip)
 const WHEELIE_THRESHOLD = 0.175; // ~10° — below this slope angle, no wheelie torque (safe on flat/mild)
+
+// ── Surface Types (bodenbeschaffenheit affects grip + visuals) ──
+// gripMod is a MULTIPLIER on car.grip (which is a velocity-retention factor: vx *= grip).
+// Higher gripMod → grip closer to 1.0 → LESS friction → slippery (ice).
+// Lower gripMod → grip further from 1.0 → MORE friction → sticky/sluggish (mud, sand).
+const SURFACES = {
+  grass: {
+    name: "Gras",
+    gripMod: 1.0,        // baseline — normal friction
+    maxVxMod: 1.0,
+    grassColor: "#4CAF50",
+    grassDark: "#388E3C",
+    dirtColor: "#7B5B3B",
+  },
+  mud: {
+    name: "Matsch",
+    gripMod: 0.972,      // more friction — sluggish, hard to maintain speed
+    maxVxMod: 0.85,
+    grassColor: "#6B4E2F",
+    grassDark: "#5B3E27",
+    dirtColor: "#4A3520",
+  },
+  ice: {
+    name: "Eis",
+    gripMod: 1.007,      // less friction — slippery, slides forever, hard to brake
+    maxVxMod: 1.1,       // can slide fast
+    grassColor: "#B0E0E6",
+    grassDark: "#87CEEB",
+    dirtColor: "#5F9EA0",
+  },
+  sand: {
+    name: "Sand",
+    gripMod: 0.952,      // heavy friction — sink, can't reach top speed
+    maxVxMod: 0.75,
+    grassColor: "#F4E4BC",
+    grassDark: "#D4C28E",
+    dirtColor: "#C2A878",
+  },
+  gravel: {
+    name: "Schotter",
+    gripMod: 0.985,      // slightly more friction than grass
+    maxVxMod: 0.95,
+    grassColor: "#A0A0A0",
+    grassDark: "#808080",
+    dirtColor: "#606060",
+  },
+};
+
+// ── Weather (rotates per run, affects visuals + grip) ──
+const WEATHER_TYPES = {
+  sunny:  { name: "Sonnig",  skyTop: "#87CEEB", skyMid: "#B0E0E6", skyBot: "#E0F6FF", gripMod: 1.0,  farHill: "#7BA88A", midHill: "#3CB371", fog: 0 },
+  night:  { name: "Nacht",   skyTop: "#0D1B2A", skyMid: "#1B2838", skyBot: "#2C3E50", gripMod: 1.0,  farHill: "#2C3E50", midHill: "#1E3A2A", fog: 0, dark: true },
+  rain:   { name: "Regen",   skyTop: "#708090", skyMid: "#778899", skyBot: "#B0C4DE", gripMod: 0.85, farHill: "#5F7A6A", midHill: "#2E7D32", fog: 0, rain: true },
+  snow:   { name: "Schnee",  skyTop: "#C0D0E0", skyMid: "#D0E0F0", skyBot: "#E8F0F8", gripMod: 0.70, farHill: "#A0B8C8", midHill: "#7090A0", fog: 0, snow: true },
+  fog:    { name: "Nebel",   skyTop: "#BEBEBE", skyMid: "#D0D0D0", skyBot: "#E0E0E0", gripMod: 0.90, farHill: "#A0B0A0", midHill: "#5A8A5A", fog: 280 },
+};
 
 // ── Adaptive Quality (FPS-based render scaling) ──
 // Tracks FPS in a rolling window. If FPS drops, reduces render resolution
@@ -449,7 +505,18 @@ function difficultyAt(x) {
 // Replaces layered-sine noise. Control points are placed at random intervals
 // with random-walk heights that drift freely (not centered on 0), producing
 // organic terrain: real hills, valleys, plateaus — no visible "algorithm".
-let controlPoints = []; // {x, y} in world coords
+
+// Surface regions: {startX, surface} — terrain segments with different ground types
+let surfaceRegions = [];
+// Special zones: {startX, endX, type} — structured terrain sections
+let specialZones = [];
+// Current weather (picked per run)
+let currentWeather = null;
+
+const SURFACE_KEYS = ["grass", "mud", "ice", "sand", "gravel"];
+const WEATHER_KEYS = ["sunny", "night", "rain", "snow", "fog"];
+
+function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function resetTerrain() {
   // Start with a few random control points so terrain is interesting from the get-go
@@ -467,26 +534,133 @@ function resetTerrain() {
     lastY = lastY + drift + pull;
     controlPoints.push({ x: nextX, y: lastY });
   }
+
+  // Reset surface regions — first 1500 units are grass (safe start)
+  surfaceRegions = [{ startX: 0, surface: "grass" }];
+  // Reset special zones
+  specialZones = [];
+  // Pick random weather for this run
+  currentWeather = WEATHER_TYPES[pickRandom(WEATHER_KEYS)];
+}
+
+// ── Surface placement: every 1500-3500 units, switch to a new surface type ──
+function ensureSurfaceRegions(upToX) {
+  const last = surfaceRegions[surfaceRegions.length - 1];
+  while (last.startX + 1500 + Math.random() * 2000 < upToX) {
+    const nextStart = last.startX + 1500 + Math.random() * 2000;
+    // Pick a surface different from the current one
+    let nextSurface;
+    do { nextSurface = pickRandom(SURFACE_KEYS); } while (nextSurface === last.surface);
+    // Grass is more common (weight 3), others weight 1
+    if (Math.random() < 0.4) nextSurface = "grass";
+    surfaceRegions.push({ startX: nextStart, surface: nextSurface });
+    return; // one per call, ensures progressive generation
+  }
+}
+
+// Get surface type at world x
+function surfaceAt(x) {
+  let current = surfaceRegions[0];
+  for (const region of surfaceRegions) {
+    if (region.startX <= x) current = region;
+    else break;
+  }
+  return SURFACES[current.surface] || SURFACES.grass;
+}
+
+// ── Special Zones: structured terrain sections every 2000-5000 units ──
+const ZONE_TYPES = ["boost", "coinfield", "mountain", "chaos"];
+const ZONE_GAP_MIN = 2000;
+const ZONE_GAP_MAX = 5000;
+const ZONE_LENGTH = 800; // each zone is ~800px wide
+
+function ensureSpecialZones(upToX) {
+  while (specialZones.length === 0 || specialZones[specialZones.length - 1].endX < upToX) {
+    const prevEnd = specialZones.length === 0 ? 2000 : specialZones[specialZones.length - 1].endX;
+    const gap = ZONE_GAP_MIN + Math.random() * (ZONE_GAP_MAX - ZONE_GAP_MIN);
+    const start = prevEnd + gap;
+    const type = pickRandom(ZONE_TYPES);
+    specialZones.push({ startX: start, endX: start + ZONE_LENGTH, type });
+  }
+}
+
+// Check if x is inside a special zone, return zone or null
+function zoneAt(x) {
+  for (const z of specialZones) {
+    if (x >= z.startX && x <= z.endX) return z;
+  }
+  return null;
 }
 
 // Generate control points ahead of the given x-coordinate
+// Injects terrain features (kickers, gaps, double-humps) and special zone shapes
 function ensureControlPoints(upToX) {
+  // Make sure surface regions and zones are generated ahead too
+  ensureSurfaceRegions(upToX + VIEW_AHEAD);
+  ensureSpecialZones(upToX + VIEW_AHEAD);
+
   while (controlPoints[controlPoints.length - 1].x < upToX) {
     const last = controlPoints[controlPoints.length - 1];
-    // Random interval between control points (varied → breaks regularity)
     const interval = 120 + Math.random() * 280; // 120-400 world units
     const nextX = last.x + interval;
     const diff = difficultyAt(nextX);
-    // Random walk: drift from last Y, can go anywhere (not mean-reverted to 0)
-    // Mild pull toward BASE_Y prevents runaway to extreme heights/depths
-    // Clamp drift so max slope between control points stays driveable (~45° max).
-    // At interval=120 (minimum), a drift of 120 would give 45° slope.
-    // Scale drift cap with interval so wider gaps allow more height change.
     const maxDriftForSlope = interval * 0.7; // max 35° slope between control points
-    const rawDrift = (Math.random() - 0.5) * 130 * diff;
-    const drift = Math.max(-maxDriftForSlope, Math.min(maxDriftForSlope, rawDrift));
-    const pull = (BASE_Y - last.y) * 0.06;
-    controlPoints.push({ x: nextX, y: last.y + drift + pull });
+
+    // Check if we're in a special zone — override terrain shape
+    const zone = zoneAt(nextX);
+    let y;
+
+    if (zone && nextX > zone.startX + 50) {
+      // ── Special Zone terrain shapes ──
+      const zProgress = (nextX - zone.startX) / ZONE_LENGTH; // 0→1 across zone
+
+      if (zone.type === "boost") {
+        // Mostly flat with small gentle bumps — speed section
+        y = BASE_Y + Math.sin(zProgress * Math.PI * 3) * 15;
+      } else if (zone.type === "mountain") {
+        // Big steep mountain pass — test for engine power
+        const mountainHeight = 200 * diff;
+        y = BASE_Y - Math.sin(zProgress * Math.PI) * mountainHeight;
+      } else if (zone.type === "chaos") {
+        // Extreme jagged terrain — survival test
+        const rawDrift = (Math.random() - 0.5) * 200 * diff;
+        const drift = Math.max(-maxDriftForSlope, Math.min(maxDriftForSlope, rawDrift));
+        const pull = (BASE_Y - last.y) * 0.03;
+        y = last.y + drift + pull;
+      } else {
+        // coinfield — gentle rolling hills (coins placed densely by CoinSystem)
+        y = BASE_Y + Math.sin(zProgress * Math.PI * 4) * 40;
+      }
+    } else {
+      // ── Normal random-walk terrain with occasional features ──
+      // 15% chance for a terrain feature (kicker, gap, double-hump)
+      const featureRoll = Math.random();
+
+      if (featureRoll < 0.04 && interval > 200) {
+        // Kicker ramp: steep up then steep down (launch pad)
+        const rampHeight = 60 + Math.random() * 80;
+        y = last.y - rampHeight;
+      } else if (featureRoll < 0.07 && interval > 250) {
+        // Gap: drop terrain sharply then back up (jump required)
+        // We create a valley — the car must jump across
+        const gapDepth = 80 + Math.random() * 60;
+        y = last.y + gapDepth;
+      } else if (featureRoll < 0.10) {
+        // Double-hump: two quick bumps (hop-hop)
+        const humpHeight = 30 + Math.random() * 30;
+        y = last.y - humpHeight * Math.sin(Math.random() * Math.PI);
+      } else {
+        // Standard random walk
+        const rawDrift = (Math.random() - 0.5) * 130 * diff;
+        const drift = Math.max(-maxDriftForSlope, Math.min(maxDriftForSlope, rawDrift));
+        const pull = (BASE_Y - last.y) * 0.06;
+        y = last.y + drift + pull;
+      }
+    }
+
+    // Clamp y to prevent extreme values
+    y = Math.max(BASE_Y - 400, Math.min(BASE_Y + 300, y));
+    controlPoints.push({ x: nextX, y });
   }
 }
 
@@ -556,6 +730,11 @@ class Terrain {
     }
     // NOTE: We do NOT trim behind — keeping all points allows driving backwards.
     // Memory is negligible: ~1700 points per 10km (each point = 2 numbers).
+  }
+
+  // Surface type at world x (delegates to global surfaceAt)
+  surfaceAt(x) {
+    return surfaceAt(x);
   }
 
   // Ground height at world x (binary search in points)
@@ -666,7 +845,12 @@ class Car {
     const ENGINE_BACK = this.engineBack;
     const AIR_DRAG = 0.995;
     const ANG_DAMP = 0.96;
-    const MAX_VX = 14;
+
+    // ── Surface & Weather modifiers (affect grip + max speed) ──
+    const surface = terrain.surfaceAt(this.x);
+    const weatherMod = currentWeather ? currentWeather.gripMod : 1.0;
+    const effectiveGrip = this.grip * surface.gripMod * weatherMod;
+    const MAX_VX = 14 * surface.maxVxMod;
 
     // ── Mass & inertia factors (Jeep = 1.0 reference) ──
     // Heavier mass → slower acceleration, but retains speed better (momentum)
@@ -774,7 +958,7 @@ class Car {
       this.vy = s * vAlong;
 
       // Rolling friction (upgradeable)
-      this.vx *= this.grip;
+      this.vx *= effectiveGrip;
 
       // ── Engine wheelie torque: gassing on steep uphill pushes front up.
       // Proportional to slope steepness beyond WHEELIE_THRESHOLD (~10°).
@@ -1107,8 +1291,12 @@ class CoinSystem {
     // groundAt() to return stale/wrong heights → coins spawn underground.
     const spawnFrontier = Math.max(camX, carX) + VIEW_AHEAD;
     while (this.nextSpawnX < spawnFrontier) {
-      // Random gap between coins
-      const gap = COIN_GAP_MIN + Math.random() * (COIN_GAP_MAX - COIN_GAP_MIN);
+      // Check if inside a coinfield zone — dense coins
+      const zone = zoneAt(this.nextSpawnX);
+      const inCoinfield = zone && zone.type === "coinfield";
+      const gap = inCoinfield
+        ? 80 + Math.random() * 60   // dense: 80-140px between coins
+        : COIN_GAP_MIN + Math.random() * (COIN_GAP_MAX - COIN_GAP_MIN);
       this.nextSpawnX += gap;
       // Ensure terrain is generated at spawn position before querying height
       terrain.update(this.nextSpawnX);
@@ -1271,6 +1459,14 @@ let runPickups = [];    // coin/fuel pickup positions: {x, y, type}
 let runCrashX = 0;      // where the run ended
 const TRACK_SAMPLE_INTERVAL = 50; // sample terrain every 50 world units (~5m)
 
+// ── Surface/Weather emoji helpers for HUD badges ──
+function surfEmoji(name) {
+  return { grass: "🛣️", mud: "🟤", ice: "❄️", sand: "🏜️", gravel: "🪨" }[name] || "🛣️";
+}
+function weatherEmoji(name) {
+  return { sunny: "☀️", night: "🌙", rain: "🌧️", snow: "🌨️", fog: "🌫️" }[name] || "☀️";
+}
+
 function initGame() {
   // New random terrain per run
   resetTerrain();
@@ -1370,6 +1566,17 @@ function update(dt) {
   document.getElementById("fuel-bar-fill").style.width = (car.fuel / car.maxFuel * 100) + "%";
   document.getElementById("level").textContent = level;
 
+  // Surface + Weather indicators (update only when changed — cheap DOM writes)
+  const surf = surfaceAt(car.x);
+  if (surf._lastBadge !== surf.name) {
+    document.getElementById("surface-badge").textContent = surfEmoji(surf.name);
+    surf._lastBadge = surf.name;
+  }
+  if (currentWeather && currentWeather._lastBadge !== currentWeather.name) {
+    document.getElementById("weather-badge").textContent = weatherEmoji(currentWeather.name);
+    currentWeather._lastBadge = currentWeather.name;
+  }
+
   // Check game over conditions
   if (car.fuel <= 0 && Math.abs(car.vx) < 0.3) {
     car.dead = true;
@@ -1387,19 +1594,31 @@ function showLevelUp(lvl, bonus) {
 }
 
 function render() {
-  // Sky gradient
+  const w = currentWeather || WEATHER_TYPES.sunny;
+
+  // Sky gradient (weather-dependent)
   const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, "#87CEEB");
-  grad.addColorStop(0.6, "#B0E0E6");
-  grad.addColorStop(1, "#E0F6FF");
+  grad.addColorStop(0, w.skyTop);
+  grad.addColorStop(0.6, w.skyMid);
+  grad.addColorStop(1, w.skyBot);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  // Clouds (drawn BEFORE hills so they appear behind them)
-  clouds.draw(ctx, camX);
+  // Stars at night
+  if (w.dark) {
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    for (let i = 0; i < 40; i++) {
+      const sx = (i * 137.5 + camX * 0.02) % W;
+      const sy = (i * 73.3) % (H * 0.5);
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+  }
 
-  // Far hills (parallax background) — solid fill, atmospheric haze color
-  ctx.fillStyle = "#7BA88A";
+  // Clouds (drawn BEFORE hills so they appear behind them) — hide at night
+  if (!w.dark) clouds.draw(ctx, camX);
+
+  // Far hills (parallax background) — weather-dependent color
+  ctx.fillStyle = w.farHill;
   ctx.beginPath();
   const camXbg = camX * 0.3;
   ctx.moveTo(0, H);
@@ -1412,8 +1631,8 @@ function render() {
   ctx.closePath();
   ctx.fill();
 
-  // Mid hills — solid fill, slightly more saturated than far
-  ctx.fillStyle = "#3CB371";
+  // Mid hills — weather-dependent color
+  ctx.fillStyle = w.midHill;
   ctx.beginPath();
   const camXmid = camX * 0.6;
   ctx.moveTo(0, H);
@@ -1426,15 +1645,13 @@ function render() {
   ctx.closePath();
   ctx.fill();
 
-  // Terrain
-  ctx.fillStyle = "#8B6F47";
-  ctx.strokeStyle = "#6B4E2F";
-  ctx.lineWidth = 3;
-
-  // Draw terrain as filled polygon
-  ctx.beginPath();
+  // Terrain — surface-dependent dirt color
   const pts = terrain.points;
   const [tStart, tEnd] = terrain.visibleRange(camX, W);
+
+  // Draw terrain as filled polygon (per-segment surface colors)
+  // We render in segments so surface transitions are visible
+  ctx.beginPath();
   for (let i = tStart; i < tEnd; i++) {
     const sx = pts[i].x - camX;
     if (i === tStart) ctx.moveTo(sx, pts[i].y - camY);
@@ -1443,30 +1660,108 @@ function render() {
   ctx.lineTo(W + 50, H + 100);
   ctx.lineTo(-50, H + 100);
   ctx.closePath();
-  ctx.fillStyle = "#7B5B3B";
+  // Use the surface color at screen center for the fill
+  const centerSurface = surfaceAt(car ? car.x : 0);
+  ctx.fillStyle = centerSurface.dirtColor;
   ctx.fill();
 
-  // Grass layer on top of terrain
-  ctx.beginPath();
-  for (let i = tStart; i < tEnd; i++) {
-    const sx = pts[i].x - camX;
-    if (i === tStart) ctx.moveTo(sx, pts[i].y - camY);
-    else ctx.lineTo(sx, pts[i].y - camY);
+  // Grass/surface layer on top of terrain — colored by surface at each segment
+  // We draw in chunks to handle surface transitions
+  let chunkStart = tStart;
+  for (let i = tStart + 1; i <= tEnd; i++) {
+    const useSurface = (i < tEnd) ? surfaceAt(pts[i].x) : centerSurface;
+    const prevSurface = surfaceAt(pts[chunkStart].x);
+    if (useSurface !== prevSurface || i === tEnd) {
+      // Draw chunk from chunkStart to i
+      ctx.beginPath();
+      for (let j = chunkStart; j < i; j++) {
+        const sx = pts[j].x - camX;
+        if (j === chunkStart) ctx.moveTo(sx, pts[j].y - camY);
+        else ctx.lineTo(sx, pts[j].y - camY);
+      }
+      ctx.strokeStyle = prevSurface.grassColor;
+      ctx.lineWidth = 8;
+      ctx.lineJoin = "round";
+      ctx.stroke();
+      ctx.strokeStyle = prevSurface.grassDark;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      chunkStart = i - 1;
+    }
   }
-  ctx.strokeStyle = "#4CAF50";
-  ctx.lineWidth = 8;
-  ctx.lineJoin = "round";
-  ctx.stroke();
-  // thinner darker green on top
-  ctx.strokeStyle = "#388E3C";
-  ctx.lineWidth = 4;
-  ctx.stroke();
+  // Fallback: if all same surface, draw the whole thing
+  if (chunkStart === tStart) {
+    ctx.beginPath();
+    for (let i = tStart; i < tEnd; i++) {
+      const sx = pts[i].x - camX;
+      if (i === tStart) ctx.moveTo(sx, pts[i].y - camY);
+      else ctx.lineTo(sx, pts[i].y - camY);
+    }
+    ctx.strokeStyle = centerSurface.grassColor;
+    ctx.lineWidth = 8;
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    ctx.strokeStyle = centerSurface.grassDark;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+  }
+
+  // ── Weather particles ──
+  if (w.rain) {
+    ctx.strokeStyle = "rgba(180,200,220,0.5)";
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 60; i++) {
+      const rx = ((i * 47.3 + gameTime * 400) % (W + 100)) - 50;
+      const ry = ((i * 89.7 + gameTime * 800) % (H + 100)) - 50;
+      ctx.beginPath();
+      ctx.moveTo(rx, ry);
+      ctx.lineTo(rx - 3, ry + 12);
+      ctx.stroke();
+    }
+  }
+  if (w.snow) {
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    for (let i = 0; i < 50; i++) {
+      const sx = ((i * 53.7 + gameTime * 60 + Math.sin(gameTime + i) * 20) % (W + 100)) - 50;
+      const sy = ((i * 91.3 + gameTime * 120) % (H + 100)) - 50;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (w.fog > 0) {
+    // Fog circle around the car — visibility radius
+    const carSx = car ? car.x - camX : W / 2;
+    const carSy = car ? car.y - camY : H / 2;
+    const fogGrad = ctx.createRadialGradient(carSx, carSy, w.fog * 0.5, carSx, carSy, w.fog * 1.5);
+    fogGrad.addColorStop(0, "rgba(220,220,220,0)");
+    fogGrad.addColorStop(1, "rgba(220,220,220,0.85)");
+    ctx.fillStyle = fogGrad;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   // Coins & fuel
   coins.draw(ctx, camX, camY, gameTime);
   fuels.draw(ctx, camX, camY);
 
-  // Car
+  // Car (with headlight glow at night)
+  if (w.dark && car) {
+    // Headlight cone
+    const sx = car.x - camX;
+    const sy = car.y - camY;
+    const fwdX = Math.cos(car.angle);
+    const fwdY = Math.sin(car.angle);
+    const lightGrad = ctx.createRadialGradient(
+      sx + fwdX * 40, sy + fwdY * 10, 10,
+      sx + fwdX * 120, sy + fwdY * 40, 120
+    );
+    lightGrad.addColorStop(0, "rgba(255,250,200,0.35)");
+    lightGrad.addColorStop(1, "rgba(255,250,200,0)");
+    ctx.fillStyle = lightGrad;
+    ctx.beginPath();
+    ctx.arc(sx + fwdX * 80, sy + fwdY * 25, 100, 0, Math.PI * 2);
+    ctx.fill();
+  }
   car.draw(ctx, camX, camY);
 }
 
