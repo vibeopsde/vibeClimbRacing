@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.3.2";
+const VERSION = "v2606.3.3";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -28,8 +28,9 @@ const WHEELIE_THRESHOLD = 0.175; // ~10° — below this slope angle, no wheelie
 
 // ── Surface Types (bodenbeschaffenheit affects grip + visuals) ──
 // gripMod is a MULTIPLIER on car.grip (which is a velocity-retention factor: vx *= grip).
-// Higher gripMod → grip closer to 1.0 → LESS friction → slippery (ice).
-// Lower gripMod → grip further from 1.0 → MORE friction → sticky/sluggish (mud, sand).
+// Applied PER FRAME at 60fps — so even 0.99 vs 1.00 compounds dramatically over time.
+// Keep modifiers VERY close to 1.0. A 0.98 modifier means grip 0.992*0.98=0.972,
+// which after 60 frames = 0.972^60 = 0.18 (car retains only 18% of speed after 1s).
 const SURFACES = {
   grass: {
     name: "Gras",
@@ -41,31 +42,31 @@ const SURFACES = {
   },
   mud: {
     name: "Matsch",
-    gripMod: 0.972,      // more friction — sluggish, hard to maintain speed
-    maxVxMod: 0.85,
+    gripMod: 0.990,      // slightly more friction — sluggish
+    maxVxMod: 0.90,
     grassColor: "#6B4E2F",
     grassDark: "#5B3E27",
     dirtColor: "#4A3520",
   },
   ice: {
     name: "Eis",
-    gripMod: 1.007,      // less friction — slippery, slides forever, hard to brake
-    maxVxMod: 1.1,       // can slide fast
+    gripMod: 1.005,      // less friction — slippery, hard to brake
+    maxVxMod: 1.1,
     grassColor: "#B0E0E6",
     grassDark: "#87CEEB",
     dirtColor: "#5F9EA0",
   },
   sand: {
     name: "Sand",
-    gripMod: 0.952,      // heavy friction — sink, can't reach top speed
-    maxVxMod: 0.75,
+    gripMod: 0.985,      // heavy friction — sink, can't reach top speed
+    maxVxMod: 0.80,
     grassColor: "#F4E4BC",
     grassDark: "#D4C28E",
     dirtColor: "#C2A878",
   },
   gravel: {
     name: "Schotter",
-    gripMod: 0.985,      // slightly more friction than grass
+    gripMod: 0.997,      // very slightly more friction than grass
     maxVxMod: 0.95,
     grassColor: "#A0A0A0",
     grassDark: "#808080",
@@ -75,11 +76,11 @@ const SURFACES = {
 
 // ── Weather (rotates per run, affects visuals + grip) ──
 const WEATHER_TYPES = {
-  sunny:  { name: "Sonnig",  skyTop: "#87CEEB", skyMid: "#B0E0E6", skyBot: "#E0F6FF", gripMod: 1.0,  farHill: "#7BA88A", midHill: "#3CB371", fog: 0 },
-  night:  { name: "Nacht",   skyTop: "#0D1B2A", skyMid: "#1B2838", skyBot: "#2C3E50", gripMod: 1.0,  farHill: "#2C3E50", midHill: "#1E3A2A", fog: 0, dark: true },
-  rain:   { name: "Regen",   skyTop: "#708090", skyMid: "#778899", skyBot: "#B0C4DE", gripMod: 0.85, farHill: "#5F7A6A", midHill: "#2E7D32", fog: 0, rain: true },
-  snow:   { name: "Schnee",  skyTop: "#C0D0E0", skyMid: "#D0E0F0", skyBot: "#E8F0F8", gripMod: 0.70, farHill: "#A0B8C8", midHill: "#7090A0", fog: 0, snow: true },
-  fog:    { name: "Nebel",   skyTop: "#BEBEBE", skyMid: "#D0D0D0", skyBot: "#E0E0E0", gripMod: 0.90, farHill: "#A0B0A0", midHill: "#5A8A5A", fog: 280 },
+  sunny:  { name: "Sonnig",  skyTop: "#87CEEB", skyMid: "#B0E0E6", skyBot: "#E0F6FF", gripMod: 1.0,    farHill: "#7BA88A", midHill: "#3CB371", fog: 0 },
+  night:  { name: "Nacht",   skyTop: "#0D1B2A", skyMid: "#1B2838", skyBot: "#2C3E50", gripMod: 1.0,    farHill: "#2C3E50", midHill: "#1E3A2A", fog: 0, dark: true },
+  rain:   { name: "Regen",   skyTop: "#708090", skyMid: "#778899", skyBot: "#B0C4DE", gripMod: 0.992,  farHill: "#5F7A6A", midHill: "#2E7D32", fog: 0, rain: true },
+  snow:   { name: "Schnee",  skyTop: "#C0D0E0", skyMid: "#D0E0F0", skyBot: "#E8F0F8", gripMod: 0.997,  farHill: "#A0B8C8", midHill: "#7090A0", fog: 0, snow: true },
+  fog:    { name: "Nebel",   skyTop: "#BEBEBE", skyMid: "#D0D0D0", skyBot: "#E0E0E0", gripMod: 0.998,  farHill: "#A0B0A0", midHill: "#5A8A5A", fog: 280 },
 };
 
 // ── Adaptive Quality (FPS-based render scaling) ──
@@ -848,11 +849,17 @@ class Car {
     const AIR_DRAG = 0.995;
     const ANG_DAMP = 0.96;
 
-    // ── Surface & Weather modifiers (affect grip + max speed) ──
+    // ── Surface & Weather modifiers ──
+    // effectiveGrip: velocity retention per frame (higher = less friction = slippery)
+    // tractionMod: how much engine force transfers to the road (lower = wheelspin = slow accel)
     const surface = terrain.surfaceAt(this.x);
     const weatherMod = currentWeather ? currentWeather.gripMod : 1.0;
     const effectiveGrip = this.grip * surface.gripMod * weatherMod;
     const MAX_VX = 14 * surface.maxVxMod;
+    // Traction = how well the car puts power down. Ice = wheelspin (low traction),
+    // sand/mud = bogged down. Grass = full traction.
+    // Map gripMod (1.0 = neutral) to traction: <1.0 → less traction, >1.0 → slightly more
+    const tractionMod = Math.max(0.5, Math.min(1.1, surface.gripMod * 0.5 + 0.5));
 
     // ── Mass & inertia factors (Jeep = 1.0 reference) ──
     // Heavier mass → slower acceleration, but retains speed better (momentum)
@@ -871,15 +878,15 @@ class Car {
     if (gas && this.fuel > 0) {
       this.fuel -= this.drainRate * dts;
       if (this.onGround) {
-        this.vx += fwdX * ENGINE_FWD * massFactor * dts;
-        this.vy += fwdY * ENGINE_FWD * massFactor * dts;
+        this.vx += fwdX * ENGINE_FWD * massFactor * tractionMod * dts;
+        this.vy += fwdY * ENGINE_FWD * massFactor * tractionMod * dts;
       }
     }
     if (brake && this.fuel > 0) {
       this.fuel -= this.drainRate * 0.5 * dts;
       if (this.onGround) {
-        this.vx -= fwdX * ENGINE_BACK * massFactor * dts;
-        this.vy -= fwdY * ENGINE_BACK * massFactor * dts;
+        this.vx -= fwdX * ENGINE_BACK * massFactor * tractionMod * dts;
+        this.vy -= fwdY * ENGINE_BACK * massFactor * tractionMod * dts;
       }
     }
 
