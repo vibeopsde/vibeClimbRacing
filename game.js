@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.3.1";
+const VERSION = "v2606.3.2";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -505,6 +505,7 @@ function difficultyAt(x) {
 // Replaces layered-sine noise. Control points are placed at random intervals
 // with random-walk heights that drift freely (not centered on 0), producing
 // organic terrain: real hills, valleys, plateaus — no visible "algorithm".
+let controlPoints = []; // {x, y} in world coords
 
 // Surface regions: {startX, surface} — terrain segments with different ground types
 let surfaceRegions = [];
@@ -1469,7 +1470,6 @@ function weatherEmoji(name) {
 }
 
 function initGame() {
- try {
   // New random terrain per run
   resetTerrain();
   terrain = new Terrain();
@@ -1491,10 +1491,6 @@ function initGame() {
   qualityHighStreak = 0;
   lastTime = performance.now();
   requestAnimationFrame(loop);
- } catch(e) {
-  document.getElementById("version-tag").textContent = "INIT ERROR: " + e.message;
-  console.error("initGame() crash:", e.message, e.stack);
- }
 }
 
 // ── Main Loop ──
@@ -1600,7 +1596,6 @@ function showLevelUp(lvl, bonus) {
 }
 
 function render() {
- try {
   const w = currentWeather || WEATHER_TYPES.sunny;
 
   // Sky gradient (weather-dependent)
@@ -1770,13 +1765,6 @@ function render() {
     ctx.fill();
   }
   car.draw(ctx, camX, camY);
- } catch(e) {
-  // Debug: draw error text on canvas so we can see what's wrong
-  ctx.fillStyle = "red";
-  ctx.font = "16px monospace";
-  ctx.fillText("RENDER ERROR: " + e.message, 20, 40);
-  console.error("render() crash:", e.message, e.stack);
- }
 }
 
 function gameOver() {
