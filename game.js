@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.10";
+const VERSION = "v2606.2.11";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -17,11 +17,12 @@ const FUEL_GAP_MAX = 7000;        // max gap between fuel cans (intentionally ra
 const BASE_Y = 280;               // ground level (world Y)
 const CAM_LERP_X = 0.08;           // camera follow lerp factor (X)
 const CAM_LERP_Y = 0.05;           // camera follow lerp factor (Y — smoother for vertical)
-const FLIP_DEATH_TIME = 0.3;       // seconds upside-down before death (near-instant, like original)
 const LOOPING_BONUS = 10;         // coins awarded per full loop (360° rotation in air)
 const MAX_SPRING = 15;            // max visual spring compression (px)
 const AIR_CONTROL = 0.002;        // air rotation force — capped, prevents death spins
-const LANDING_CRASH_ANGLE = 1.3;  // ~75° — land more than this off-slope → instant crash (like HCR1)
+const HEAD_DEATH_PAD = 14;        // px — head "touches" ground at ~170°+ (full flip).
+                                  // = restLen - |headLocalY| + 2 for the smallest vehicle (bike).
+                                  // 40° wheelies are safe (head is 50+px above ground);
 const WHEELIE_TORQUE = 0.012;     // engine torque lifting front when gassing on uphill (wheelie → backflip)
 const WHEELIE_THRESHOLD = 0.175; // ~10° — below this slope angle, no wheelie torque (safe on flat/mild)
 
@@ -608,9 +609,8 @@ class Car {
     this.angVel = 0;
     this.onGround = false;
     this.dead = false;
-    this.flipTime = 0;
     this.airSpin = 0;          // accumulated rotation in air (for loop detection)
-    this.wasAirborne = false;  // track air→ground transition for landing crash check
+    this.wasAirborne = false;  // track air→ground transition (kept for potential future use)
 
     // Visual suspension — spring compression per wheel (visual only, no physics impact)
     this.springL = 0;
@@ -751,20 +751,7 @@ class Car {
       this.y = avgGround - restLen;
       this.onGround = true;
 
-      // ── Landing crash check: if we were airborne and land at a bad angle,
-      // crash immediately — like HCR1 where a bad landing = neck snap.
-      // Compare car angle to terrain slope; if difference > LANDING_CRASH_ANGLE (~75°), dead.
-      if (this.wasAirborne) {
-        slope = terrain.slopeAt(this.x);
-        const slopeAngle = Math.atan2(slope, 1);
-        let angleDiff = this.angle - slopeAngle;
-        // Normalize to [-PI, PI]
-        while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-        while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-        if (Math.abs(angleDiff) > LANDING_CRASH_ANGLE) {
-          this.dead = true;
-        }
-      }
+      // ── Landing crash: replaced by head-touch death model (see end of update)
 
       // Terrain-following: project velocity onto slope direction
       // This preserves gravity's along-slope component (uphill slows, downhill accelerates)
@@ -849,14 +836,37 @@ class Car {
     // Clamp fuel
     if (this.fuel < 0) this.fuel = 0;
 
-    // Death: flipped AND on ground → game over (looping in air is fine!)
-    // Use tighter threshold so near-miss landings don't trigger death
-    const flipped = normAngle > Math.PI * this.flipThreshold && normAngle < Math.PI * (2 - this.flipThreshold);
-    if (flipped && this.onGround) {
-      this.flipTime += dt;
-      if (this.flipTime > FLIP_DEATH_TIME) this.dead = true;
-    } else {
-      this.flipTime = 0;
+    // ── Death: driver's head touches the ground (like HCR1 — "neck snap") ──
+    // The driver head is positioned in the cabin, which sits on top of the body.
+    // In car-local coordinates: headY ≈ -(bodyHeight + cabinHeight/2) above the car center.
+    // When the car rotates, the head swings in an arc. If the head's world Y
+    // drops to/below the terrain height at the head's world X → death.
+    // This naturally handles:
+    //   - Wheelies (40° tilt): head is high up, far from ground → safe
+    //   - Full flip (180°): head swings below car center → touches ground → dead
+    //   - Bad landing (steep nose-dive): head swings forward+down → touches ground → dead
+    //   - Looping in air: head swings around but terrain is far below → safe
+    {
+      const v = this.visual;
+      // Head offset in car-local coords (same as draw code)
+      const bw = v.bodyWidth, bh = v.bodyHeight;
+      const by = -(bh - 4);
+      const ch = v.cabinHeight;
+      const cy = by - ch + 2;
+      const headLocalY = cy + ch / 2;           // head center Y in car-local space
+      const headLocalX = v.cabinOffset + v.cabinWidth / 2 - 3;  // head center X
+      // Rotate to world space
+      const cosA = Math.cos(this.angle);
+      const sinA = Math.sin(this.angle);
+      const headWX = this.x + headLocalX * cosA - headLocalY * sinA;
+      const headWY = this.y + headLocalX * sinA + headLocalY * cosA;
+      // Terrain height at head's world X
+      const groundAtHead = terrain.groundAt(headWX);
+      // Death when head touches ground (with small padding so it triggers reliably
+      // at full flip — the head is a small circle, not a point)
+      if (headWY + HEAD_DEATH_PAD >= groundAtHead) {
+        this.dead = true;
+      }
     }
 
     // Track airborne state for next frame's landing crash check
