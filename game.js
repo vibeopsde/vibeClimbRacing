@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.3.5";
+const VERSION = "v2606.3.6";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -1468,6 +1468,22 @@ function weatherEmoji(name) {
   return { sunny: "☀️", night: "🌙", rain: "🌧️", snow: "🌨️", fog: "🌫️" }[name] || "☀️";
 }
 
+// Blend two hex colors (#RRGGBB) by factor t (0 = color0, 1 = color1)
+function blendColor(c0, c1, t) {
+  if (t <= 0) return c0;
+  if (t >= 1) return c1;
+  const r0 = parseInt(c0.slice(1, 3), 16);
+  const g0 = parseInt(c0.slice(3, 5), 16);
+  const b0 = parseInt(c0.slice(5, 7), 16);
+  const r1 = parseInt(c1.slice(1, 3), 16);
+  const g1 = parseInt(c1.slice(3, 5), 16);
+  const b1 = parseInt(c1.slice(5, 7), 16);
+  const r = Math.round(r0 + (r1 - r0) * t);
+  const g = Math.round(g0 + (g1 - g0) * t);
+  const b = Math.round(b0 + (b1 - b0) * t);
+  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
+}
+
 function initGame() {
   // New random terrain per run
   resetTerrain();
@@ -1650,8 +1666,7 @@ function render() {
   const pts = terrain.points;
   const [tStart, tEnd] = terrain.visibleRange(camX, W);
 
-  // Draw terrain as filled polygon (per-segment surface colors)
-  // We render in segments so surface transitions are visible
+  // Draw terrain as filled polygon — always same dirt color (no hard transitions underground)
   ctx.beginPath();
   for (let i = tStart; i < tEnd; i++) {
     const sx = pts[i].x - camX;
@@ -1661,48 +1676,44 @@ function render() {
   ctx.lineTo(W + 50, H + 100);
   ctx.lineTo(-50, H + 100);
   ctx.closePath();
-  // Use the surface color at screen center for the fill
-  const centerSurface = surfaceAt(car ? car.x : 0);
-  ctx.fillStyle = centerSurface.dirtColor;
+  ctx.fillStyle = "#7B5B3B";  // uniform dirt — no surface-dependent underground color
   ctx.fill();
 
-  // Grass/surface layer on top of terrain — colored by surface at each segment
-  // We draw in chunks to handle surface transitions
-  let chunkStart = tStart;
-  for (let i = tStart + 1; i <= tEnd; i++) {
-    const useSurface = (i < tEnd) ? surfaceAt(pts[i].x) : centerSurface;
-    const prevSurface = surfaceAt(pts[chunkStart].x);
-    if (useSurface !== prevSurface || i === tEnd) {
-      // Draw chunk from chunkStart to i
-      ctx.beginPath();
-      for (let j = chunkStart; j < i; j++) {
-        const sx = pts[j].x - camX;
-        if (j === chunkStart) ctx.moveTo(sx, pts[j].y - camY);
-        else ctx.lineTo(sx, pts[j].y - camY);
+  // Grass/surface layer on top of terrain — per-point color with smooth blending
+  // at surface transitions. We draw each segment with a color interpolated between
+  // the current and next surface over a ~100px blend zone.
+  for (let i = tStart; i < tEnd - 1; i++) {
+    const x0 = pts[i].x;
+    const x1 = pts[i + 1].x;
+    const surf0 = surfaceAt(x0);
+    // Find the nearest surface boundary ahead within 100px
+    let blend = 0;  // 0 = surf0, 1 = nextSurface
+    let nextSurf = surf0;
+    // Check if we're near a surface boundary
+    for (const region of surfaceRegions) {
+      if (region.startX > x0 && region.startX < x0 + 100) {
+        const dist = region.startX - x0;
+        blend = 1 - dist / 100;  // closer to boundary = more blend
+        nextSurf = SURFACES[region.surface] || SURFACES.grass;
+        break;
       }
-      ctx.strokeStyle = prevSurface.grassColor;
-      ctx.lineWidth = 8;
-      ctx.lineJoin = "round";
-      ctx.stroke();
-      ctx.strokeStyle = prevSurface.grassDark;
-      ctx.lineWidth = 4;
-      ctx.stroke();
-      chunkStart = i - 1;
     }
-  }
-  // Fallback: if all same surface, draw the whole thing
-  if (chunkStart === tStart) {
+    // Interpolate grass color
+    const c0 = surf0.grassColor;
+    const c1 = nextSurf.grassColor;
+    const grassCol = blendColor(c0, c1, blend);
+    const cd0 = surf0.grassDark;
+    const cd1 = nextSurf.grassDark;
+    const darkCol = blendColor(cd0, cd1, blend);
+
     ctx.beginPath();
-    for (let i = tStart; i < tEnd; i++) {
-      const sx = pts[i].x - camX;
-      if (i === tStart) ctx.moveTo(sx, pts[i].y - camY);
-      else ctx.lineTo(sx, pts[i].y - camY);
-    }
-    ctx.strokeStyle = centerSurface.grassColor;
+    ctx.moveTo(pts[i].x - camX, pts[i].y - camY);
+    ctx.lineTo(pts[i + 1].x - camX, pts[i + 1].y - camY);
+    ctx.strokeStyle = grassCol;
     ctx.lineWidth = 8;
     ctx.lineJoin = "round";
     ctx.stroke();
-    ctx.strokeStyle = centerSurface.grassDark;
+    ctx.strokeStyle = darkCol;
     ctx.lineWidth = 4;
     ctx.stroke();
   }
