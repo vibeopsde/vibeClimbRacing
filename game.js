@@ -4,7 +4,7 @@
 // VIBE CLIMB RACING — ENDLESS PROCEDURAL
 // ════════════════════════════════════════
 
-const VERSION = "v2606.2.11";
+const VERSION = "v2606.2.12";
 
 // ── Tunable Constants ──
 const COIN_PICKUP_DIST_SQ = 1800;  // coin pickup distance² (dx²+dy² < this)
@@ -460,8 +460,10 @@ function resetTerrain() {
   for (let i = 1; i <= 5; i++) {
     const interval = 120 + Math.random() * 280;
     const nextX = controlPoints[i - 1].x + interval;
-    const drift = (Math.random() - 0.5) * 160; // strong initial drift, no difficulty scaling
-    const pull = (BASE_Y - lastY) * 0.08;
+    const maxDriftForSlope = interval * 0.7; // clamp slope to ~35°
+    const rawDrift = (Math.random() - 0.5) * 160; // strong initial drift, no difficulty scaling
+    const drift = Math.max(-maxDriftForSlope, Math.min(maxDriftForSlope, rawDrift));
+    const pull = (BASE_Y - lastY) * 0.05;
     lastY = lastY + drift + pull;
     controlPoints.push({ x: nextX, y: lastY });
   }
@@ -477,8 +479,13 @@ function ensureControlPoints(upToX) {
     const diff = difficultyAt(nextX);
     // Random walk: drift from last Y, can go anywhere (not mean-reverted to 0)
     // Mild pull toward BASE_Y prevents runaway to extreme heights/depths
-    const drift = (Math.random() - 0.5) * 130 * diff;
-    const pull = (BASE_Y - last.y) * 0.10;
+    // Clamp drift so max slope between control points stays driveable (~45° max).
+    // At interval=120 (minimum), a drift of 120 would give 45° slope.
+    // Scale drift cap with interval so wider gaps allow more height change.
+    const maxDriftForSlope = interval * 0.7; // max 35° slope between control points
+    const rawDrift = (Math.random() - 0.5) * 130 * diff;
+    const drift = Math.max(-maxDriftForSlope, Math.min(maxDriftForSlope, rawDrift));
+    const pull = (BASE_Y - last.y) * 0.06;
     controlPoints.push({ x: nextX, y: last.y + drift + pull });
   }
 }
