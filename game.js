@@ -22,6 +22,8 @@ const LOOPING_BONUS = 10;         // coins awarded per full loop (360° rotation
 const MAX_SPRING = 15;            // max visual spring compression (px)
 const AIR_CONTROL = 0.002;        // air rotation force — capped, prevents death spins
 const LANDING_CRASH_ANGLE = 1.3;  // ~75° — land more than this off-slope → instant crash (like HCR1)
+const WHEELIE_TORQUE = 0.012;     // engine torque lifting front when gassing on uphill (wheelie → backflip)
+const WHEELIE_THRESHOLD = 0.175; // ~10° — below this slope angle, no wheelie torque (safe on flat/mild)
 
 // ── Adaptive Quality (FPS-based render scaling) ──
 // Tracks FPS in a rolling window. If FPS drops, reduces render resolution
@@ -776,6 +778,20 @@ class Car {
       // Rolling friction (upgradeable)
       this.vx *= this.grip;
 
+      // ── Engine wheelie torque: gassing on steep uphill pushes front up.
+      // Proportional to slope steepness beyond WHEELIE_THRESHOLD (~10°).
+      // On flat/mild terrain: no effect (safe to gas). On steep hills: front lifts → can flip.
+      // Once tilting back, momentum continues the rotation (tiltBack factor).
+      if (gas && this.fuel > 0) {
+        const slopeAngle = Math.atan2(slope, 1);
+        const excess = Math.max(0, slopeAngle - WHEELIE_THRESHOLD);
+        const tiltBack = Math.max(0, this.angle - slopeAngle);
+        this.angVel += WHEELIE_TORQUE * (excess + tiltBack * 0.3) * massFactor * dts;
+      }
+      if (brake && this.fuel > 0) {
+        this.angVel -= WHEELIE_TORQUE * 0.3 * massFactor * dts;
+      }
+
       // ── Visual suspension: compress springs based on terrain unevenness ──
       // Each wheel compresses based on how far below the avg ground its side is
       const groundDiff = groundR - groundL; // positive = right side lower
@@ -811,12 +827,17 @@ class Car {
         this.angVel *= (1 - 0.4 / massFactor);  // ground angular damping: heavier = more damping
         // Target angle = terrain slope angle
         const targetAngle = Math.atan2(slope, 1);
-        // Smoothly steer car angle toward slope — heavier inertia = slower alignment
+        // Smoothly steer car angle toward slope — heavier inertia = slower alignment.
+        // When gassing, reduce alignment force so engine torque (wheelie) can overcome it —
+        // this lets the car tilt back on steep uphills instead of being glued to the slope.
+        let alignForce = this.slopeAlign;
+        if (gas && this.fuel > 0) alignForce *= 0.4;  // 60% weaker when gassing → can wheelie
+        if (brake && this.fuel > 0) alignForce *= 0.6;
         let diff = targetAngle - this.angle;
         // Normalize to [-PI, PI]
         while (diff > Math.PI) diff -= 2 * Math.PI;
         while (diff < -Math.PI) diff += 2 * Math.PI;
-        this.angle += diff * this.slopeAlign * inertiaFactor * dts;
+        this.angle += diff * alignForce * inertiaFactor * dts;
       } else {
         // Upside down on ground — no slope correction, let flip timer run
         this.angVel *= 0.95;
